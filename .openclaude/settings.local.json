@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(ls -la \"C:/Users/Tade/Desktop/academia-ingles/src/app/\\(dashboard\\)/lessons/[level]/[lessonId]/\")",
+      "Bash(wc -l \"C:/Users/Tade/Desktop/academia-ingles/src/app/\\(dashboard\\)/lessons/[level]/[lessonId]/page.tsx\")",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Bash(wc:*)"
+    ]
+  }
+}
