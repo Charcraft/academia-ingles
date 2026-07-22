@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -14,9 +14,12 @@ import {
   Menu,
   X,
   Stethoscope,
+  Home,
+  LogOut,
 } from "lucide-react";
 import { cn, getCEFRBadgeColor } from "@/lib/utils";
 import { useStore } from "@/store";
+import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/types";
 
 const navLinks = [
@@ -38,6 +41,7 @@ interface DashboardShellProps {
 
 export default function DashboardShell({ profile, children }: DashboardShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const setProfile = useStore((s) => s.setProfile);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -48,6 +52,13 @@ export default function DashboardShell({ profile, children }: DashboardShellProp
   }, [profile, setProfile]);
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
+
+  const handleLogout = useCallback(async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }, [router]);
 
   useEffect(() => {
     closeMobile();
@@ -101,7 +112,7 @@ export default function DashboardShell({ profile, children }: DashboardShellProp
             const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
             return (
               <Link
-                key={link.href}
+                key={link.label}
                 href={link.href}
                 onClick={closeMobile}
                 className={cn(
@@ -119,8 +130,8 @@ export default function DashboardShell({ profile, children }: DashboardShellProp
         </nav>
 
         {/* Bottom user card */}
-        {profile && (
-          <div className="border-t border-charcoal-700/50 px-4 py-4">
+        <div className="border-t border-charcoal-700/50 px-4 py-4 space-y-2">
+          {profile && (
             <div className="flex items-center gap-3 rounded-xl bg-charcoal-800/60 px-3 py-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-500/20 text-sm font-semibold text-teal-400">
                 {profile.first_name?.[0]?.toUpperCase() ?? "?"}
@@ -135,8 +146,28 @@ export default function DashboardShell({ profile, children }: DashboardShellProp
                 </span>
               </div>
             </div>
+          )}
+
+          <div className="flex gap-2">
+            <Link
+              href="/"
+              onClick={closeMobile}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-charcoal-800 hover:text-slate-200"
+              title="Salir al inicio (sin cerrar sesión)"
+            >
+              <Home className="h-4 w-4" />
+              Salir
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-danger/10 hover:text-danger"
+              title="Cerrar sesión"
+            >
+              <LogOut className="h-4 w-4" />
+              Salir de sesión
+            </button>
           </div>
-        )}
+        </div>
       </aside>
 
       {/* Main content area */}

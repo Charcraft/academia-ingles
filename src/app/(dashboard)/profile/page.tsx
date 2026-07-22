@@ -62,8 +62,7 @@ export default function ProfilePage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from("profiles")
-        .update(updates)
-        .eq("id", user.id);
+        .upsert({ id: user.id, email: user.email, ...updates }, { onConflict: "id" });
 
       if (error) throw error;
 

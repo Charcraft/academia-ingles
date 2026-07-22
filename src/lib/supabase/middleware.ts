@@ -30,22 +30,22 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes
+  const pathname = request.nextUrl.pathname;
+  const isAdminLoginPath = pathname === "/admin/login";
+
+  // Protected routes (admin/login is its own public entry point, handled below)
   const protectedPaths = ["/dashboard", "/lessons", "/placement", "/profile", "/admin"];
-  const isProtectedPath = protectedPaths.some((path) =>
-    request.nextUrl.pathname.startsWith(path)
-  );
+  const isProtectedPath =
+    !isAdminLoginPath && protectedPaths.some((path) => pathname.startsWith(path));
 
   // Auth pages - redirect to dashboard if already logged in
   const authPaths = ["/login", "/signup"];
-  const isAuthPath = authPaths.some((path) =>
-    request.nextUrl.pathname.startsWith(path)
-  );
+  const isAuthPath = authPaths.some((path) => pathname.startsWith(path));
 
   if (!user && isProtectedPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("redirect", request.nextUrl.pathname);
+    url.searchParams.set("redirect", pathname);
     return NextResponse.redirect(url);
   }
 
@@ -55,15 +55,25 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Admin route protection
-  if (user && request.nextUrl.pathname.startsWith("/admin")) {
+  // Admin route protection (also covers /admin/login for already-logged-in users)
+  if (user && pathname.startsWith("/admin")) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
-    if (!profile || (profile.role !== "admin" && profile.role !== "case_manager")) {
+    const isStaff =
+      !!profile && (profile.role === "admin" || profile.role === "case_manager");
+
+    if (isAdminLoginPath) {
+      // Already authenticated: skip the login form, go straight to the right place.
+      const url = request.nextUrl.clone();
+      url.pathname = isStaff ? "/admin" : "/dashboard";
+      return NextResponse.redirect(url);
+    }
+
+    if (!isStaff) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
       return NextResponse.redirect(url);

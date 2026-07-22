@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Play,
   Brain,
@@ -272,15 +272,13 @@ export default function PlacementPage() {
       </div>
 
       {/* Question card */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentQuestion.id}
-          initial={{ opacity: 0, x: 30 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -30 }}
-          transition={{ duration: 0.3 }}
-          className="glass-card p-8"
-        >
+      <motion.div
+        key={currentQuestion.id}
+        initial={{ opacity: 0, x: 30 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3 }}
+        className="glass-card p-8"
+      >
           {/* Type badge */}
           <div className="mb-4">
             <TypeBadge type={currentQuestion.type} />
@@ -337,8 +335,7 @@ export default function PlacementPage() {
               );
             })}
           </div>
-        </motion.div>
-      </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

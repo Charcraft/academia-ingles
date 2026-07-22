@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Flame,
@@ -12,67 +13,29 @@ import {
   CheckCircle,
   Clock,
   BookOpen,
+  Loader2,
 } from "lucide-react";
 import { cn, formatMinutes, getCEFRBadgeColor, timeAgo } from "@/lib/utils";
 import { useStore } from "@/store";
+import { createClient } from "@/lib/supabase/client";
+import { LESSON_SLUGS } from "@/lib/lesson-slugs";
 import type { CEFRLevel } from "@/types";
-
-// ---------------------------------------------------------------------------
-// Mock data (structure ready for Supabase)
-// ---------------------------------------------------------------------------
+import toast from "react-hot-toast";
 
 const CEFR_LEVELS: CEFRLevel[] = ["A0", "A1", "A2", "B1", "B2", "C1"];
 
-const LEVEL_LESSON_COUNTS: Record<CEFRLevel, number> = {
-  A0: 5,
-  A1: 8,
-  A2: 10,
-  B1: 12,
-  B2: 10,
-  C1: 8,
-};
+interface RecentActivityItem {
+  id: string;
+  lessonTitle: string;
+  score: number | null;
+  timeSpent: number;
+  completedAt: string;
+}
 
-// Mock completed counts per level — simulate a user currently at B1
-const MOCK_COMPLETED: Record<CEFRLevel, number> = {
-  A0: 5,
-  A1: 8,
-  A2: 10,
-  B1: 4,
-  B2: 0,
-  C1: 0,
-};
-
-const MOCK_RECENT_ACTIVITY = [
-  {
-    id: "1",
-    lessonTitle: "Patient Admission Vocabulary",
-    score: 92,
-    timeSpent: 25,
-    completedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-  },
-  {
-    id: "2",
-    lessonTitle: "Present Perfect in Clinical Notes",
-    score: 85,
-    timeSpent: 30,
-    completedAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-  },
-  {
-    id: "3",
-    lessonTitle: "Vital Signs & Body Systems",
-    score: 78,
-    timeSpent: 22,
-    completedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-  },
-];
-
-const MOCK_WEEKLY_MINUTES = 320;
-
-const MOCK_LAST_INCOMPLETE_LESSON = {
-  id: "lesson-b1-5",
-  title: "ISBAR Communication Framework",
-  level: "B1" as CEFRLevel,
-};
+interface NextLesson {
+  id: string;
+  level: CEFRLevel;
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -221,33 +184,137 @@ export default function DashboardPage() {
   const dailyMinutes = useStore((s) => s.dailyMinutes);
 
   // Use profile data or fallback defaults
-  const streak = profile?.streak ?? 7;
-  const totalXp = profile?.total_xp ?? 1250;
-  const currentLevel = (profile?.current_level ?? "B1") as CEFRLevel;
+  const streak = profile?.streak ?? 0;
+  const totalXp = profile?.total_xp ?? 0;
+  const currentLevel = (profile?.current_level ?? "A0") as CEFRLevel;
   const dailyGoal = profile?.daily_goal ?? 120;
-  const minutesToday = profile?.daily_minutes_today ?? dailyMinutes > 0 ? dailyMinutes : 45;
-  const globalProgress = profile?.global_progress ?? 51;
+  const minutesToday = profile?.daily_minutes_today ?? (dailyMinutes > 0 ? dailyMinutes : 0);
+  const globalProgress = profile?.global_progress ?? 0;
   const firstName = profile?.first_name ?? "Student";
 
   const dailyProgressPct = Math.min((minutesToday / dailyGoal) * 100, 100);
 
   const currentLevelIndex = CEFR_LEVELS.indexOf(currentLevel);
 
-  // Total lessons completed across all levels
-  const totalCompleted = Object.values(MOCK_COMPLETED).reduce((a, b) => a + b, 0);
-  const totalLessonsAll = Object.values(LEVEL_LESSON_COUNTS).reduce((a, b) => a + b, 0);
+  const [loading, setLoading] = useState(true);
+  const [lessonCountsByLevel, setLessonCountsByLevel] = useState<Record<string, number>>({});
+  const [completedByLevel, setCompletedByLevel] = useState<Record<string, number>>({});
+  const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
+  const [avgScore, setAvgScore] = useState(0);
+  const [weeklyMinutes, setWeeklyMinutes] = useState(0);
+  const [nextLesson, setNextLesson] = useState<NextLesson | null>(null);
 
-  // Average score from recent activity
-  const avgScore =
-    MOCK_RECENT_ACTIVITY.reduce((sum, a) => sum + a.score, 0) / MOCK_RECENT_ACTIVITY.length;
+  useEffect(() => {
+    let cancelled = false;
 
-  // Estimated time remaining (assumes 53 total lessons, 27 done, ~30 min per lesson)
-  const remainingLessons = totalLessonsAll - totalCompleted;
+    async function load() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: allLessons } = await (supabase as any)
+        .from("lessons")
+        .select("id, level, order");
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: progress } = await (supabase as any)
+        .from("user_progress")
+        .select("score, time_spent, completed_at, lessons(id, level, order, title)")
+        .eq("user_id", user.id)
+        .eq("completed", true)
+        .order("completed_at", { ascending: false });
+
+      if (cancelled) return;
+
+      const lessonCounts: Record<string, number> = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const l of (allLessons ?? []) as any[]) {
+        lessonCounts[l.level] = (lessonCounts[l.level] ?? 0) + 1;
+      }
+      setLessonCountsByLevel(lessonCounts);
+
+      const completedCounts: Record<string, number> = {};
+      const completedOrdersByLevel: Record<string, Set<number>> = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const progressRows = (progress ?? []) as any[];
+      for (const p of progressRows) {
+        const lvl = p.lessons?.level;
+        if (!lvl) continue;
+        completedCounts[lvl] = (completedCounts[lvl] ?? 0) + 1;
+        if (!completedOrdersByLevel[lvl]) completedOrdersByLevel[lvl] = new Set();
+        completedOrdersByLevel[lvl].add(p.lessons.order);
+      }
+      setCompletedByLevel(completedCounts);
+
+      setRecentActivity(
+        progressRows.slice(0, 3).map((p, i) => ({
+          id: `${i}-${p.completed_at}`,
+          lessonTitle: p.lessons?.title ?? "Lesson",
+          score: p.score,
+          timeSpent: p.time_spent ?? 0,
+          completedAt: p.completed_at,
+        }))
+      );
+
+      const scored = progressRows.filter((p) => p.score !== null);
+      setAvgScore(
+        scored.length > 0
+          ? scored.reduce((sum, p) => sum + p.score, 0) / scored.length
+          : 0
+      );
+
+      const weekAgo = Date.now() - 7 * 86400000;
+      setWeeklyMinutes(
+        progressRows
+          .filter((p) => new Date(p.completed_at).getTime() >= weekAgo)
+          .reduce((sum, p) => sum + (p.time_spent ?? 0), 0)
+      );
+
+      // Next lesson: first lesson in the current level not yet completed
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const levelLessons = ((allLessons ?? []) as any[])
+        .filter((l) => l.level === currentLevel)
+        .sort((a, b) => a.order - b.order);
+      const doneOrders = completedOrdersByLevel[currentLevel] ?? new Set<number>();
+      const nextDbLesson = levelLessons.find((l) => !doneOrders.has(l.order));
+
+      if (nextDbLesson) {
+        const slugEntry = (LESSON_SLUGS[currentLevel] ?? []).find(
+          (l) => l.order === nextDbLesson.order
+        );
+        if (slugEntry) {
+          setNextLesson({ id: slugEntry.id, level: currentLevel });
+        }
+      }
+
+      setLoading(false);
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLevel]);
+
+  // Total lessons completed across all levels that actually have content
+  const totalCompleted = Object.values(completedByLevel).reduce((a, b) => a + b, 0);
+  const totalLessonsAll = Object.values(lessonCountsByLevel).reduce((a, b) => a + b, 0);
+
+  const remainingLessons = Math.max(totalLessonsAll - totalCompleted, 0);
   const estimatedWeeks = Math.ceil((remainingLessons * 30) / (dailyGoal * 5)); // 5 days/week
 
-  async function handleContinueLearning() {
-    // In production, fetch the last incomplete lesson from Supabase
-    void router.push(`/lessons/${MOCK_LAST_INCOMPLETE_LESSON.id}`);
+  function handleContinueLearning() {
+    if (nextLesson) {
+      router.push(`/lessons/${nextLesson.level}/${nextLesson.id}`);
+    } else {
+      router.push("/lessons");
+    }
   }
 
   return (
@@ -300,7 +367,7 @@ export default function DashboardPage() {
             Continue Learning
           </button>
           <button
-            onClick={() => router.push("/speaking")}
+            onClick={() => toast.error("Speaking practice is coming soon.")}
             className="btn-secondary w-full"
           >
             <Mic className="h-4 w-4" />
@@ -372,8 +439,8 @@ export default function DashboardPage() {
             const idxOfLevel = CEFR_LEVELS.indexOf(level);
             const isCurrent = idxOfLevel === currentLevelIndex;
             const isLocked = idxOfLevel > currentLevelIndex;
-            const completed = isLocked ? 0 : MOCK_COMPLETED[level];
-            const total = LEVEL_LESSON_COUNTS[level];
+            const completed = isLocked ? 0 : (completedByLevel[level] ?? 0);
+            const total = lessonCountsByLevel[level] ?? 0;
 
             return (
               <CEFRNode
@@ -427,7 +494,7 @@ export default function DashboardPage() {
             <StatCard
               icon={TrendingUp}
               label="Weekly Minutes"
-              value={formatMinutes(MOCK_WEEKLY_MINUTES)}
+              value={formatMinutes(weeklyMinutes)}
               color="text-blue-400"
             />
           </div>
@@ -445,32 +512,42 @@ export default function DashboardPage() {
           </h2>
 
           <div className="space-y-3">
-            {MOCK_RECENT_ACTIVITY.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-center justify-between rounded-xl bg-charcoal-800/50 px-4 py-3 transition-colors hover:bg-charcoal-800"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
-                    <CheckCircle className="h-4 w-4 text-teal-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-200">
-                      {activity.lessonTitle}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <Clock className="h-3 w-3" />
-                      <span>{activity.timeSpent} min</span>
-                      <span>&middot;</span>
-                      <span>{timeAgo(activity.completedAt)}</span>
+            {loading ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+              </div>
+            ) : recentActivity.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No completed lessons yet. Finish one to see it here.
+              </p>
+            ) : (
+              recentActivity.map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex items-center justify-between rounded-xl bg-charcoal-800/50 px-4 py-3 transition-colors hover:bg-charcoal-800"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                      <CheckCircle className="h-4 w-4 text-teal-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-200">
+                        {activity.lessonTitle}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <Clock className="h-3 w-3" />
+                        <span>{activity.timeSpent} min</span>
+                        <span>&middot;</span>
+                        <span>{timeAgo(activity.completedAt)}</span>
+                      </div>
                     </div>
                   </div>
+                  <span className="ml-4 text-sm font-semibold text-teal-400">
+                    {activity.score !== null ? `${activity.score}%` : "—"}
+                  </span>
                 </div>
-                <span className="ml-4 text-sm font-semibold text-teal-400">
-                  {activity.score}%
-                </span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </motion.div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -14,129 +14,13 @@ import {
   ArrowUpDown,
   ChevronRight,
   X,
+  Loader2,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { cn, timeAgo, getCEFRBadgeColor, getProfessionIcon } from "@/lib/utils";
 import { countries, professions } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
 import type { StudentWithProfile } from "@/types";
-
-// ── Mock Data ─────────────────────────────────────────────────────────────────
-
-const mockStudents: StudentWithProfile[] = [
-  {
-    id: "1", first_name: "Maria", last_name: "Garcia", email: "maria@example.com",
-    country: "Mexico", country_code: "MX", phone: "+521234567890",
-    profession: "Enfermera", license_number: "ENF-12345", experience_years: 5,
-    exam_interest: "ielts_academic", current_level: "A2", global_progress: 35,
-    daily_goal: 30, daily_minutes_today: 15, role: "student",
-    validation_status: "pending", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 12,
-    last_active_date: new Date().toISOString(), total_xp: 1250,
-    exam_path: "ielts_academic", is_blocked: false,
-    created_at: "2026-01-15T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 5.5,
-    last_progress: { id: "p1", user_id: "1", lesson_id: "l5", completed: true, score: 85, time_spent: 22, vocab_score: 80, grammar_score: 90, listening_score: 85, speaking_score: 5.5, completed_at: new Date().toISOString(), created_at: new Date().toISOString() },
-  },
-  {
-    id: "2", first_name: "Carlos", last_name: "Lopez", email: "carlos@example.com",
-    country: "Colombia", country_code: "CO", phone: "+573001234567",
-    profession: "Enfermero", license_number: "ENF-67890", experience_years: 3,
-    exam_interest: "toefl_ibt", current_level: "B1", global_progress: 62,
-    daily_goal: 45, daily_minutes_today: 40, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-02-10T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 28,
-    last_active_date: new Date().toISOString(), total_xp: 4800,
-    exam_path: "toefl_ibt", is_blocked: false,
-    created_at: "2026-01-20T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 6.5,
-    last_progress: { id: "p2", user_id: "2", lesson_id: "l12", completed: true, score: 92, time_spent: 18, vocab_score: 95, grammar_score: 88, listening_score: 92, speaking_score: 6.5, completed_at: new Date().toISOString(), created_at: new Date().toISOString() },
-  },
-  {
-    id: "3", first_name: "Juan", last_name: "Dela Cruz", email: "juan@example.com",
-    country: "Philippines", country_code: "PH", phone: "+639123456789",
-    profession: "Fisioterapeuta", license_number: "FIS-11111", experience_years: 2,
-    exam_interest: "undecided", current_level: "A0", global_progress: 8,
-    daily_goal: 20, daily_minutes_today: 0, role: "student",
-    validation_status: "pending", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 0,
-    last_active_date: new Date(Date.now() - 8 * 86400000).toISOString(), total_xp: 120,
-    exam_path: null, is_blocked: false,
-    created_at: "2026-06-01T00:00:00Z", updated_at: new Date(Date.now() - 8 * 86400000).toISOString(),
-    speaking_score_avg: 4.0,
-  },
-  {
-    id: "4", first_name: "Ana", last_name: "Martinez", email: "ana@example.com",
-    country: "Spain", country_code: "ES", phone: "+34600123456",
-    profession: "Doctora", license_number: "DOC-22222", experience_years: 8,
-    exam_interest: "pte_academic", current_level: "B2", global_progress: 88,
-    daily_goal: 60, daily_minutes_today: 55, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-01-25T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 45,
-    last_active_date: new Date().toISOString(), total_xp: 12500,
-    exam_path: "pte_academic", is_blocked: false,
-    created_at: "2025-12-01T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.0,
-  },
-  {
-    id: "5", first_name: "Luis", last_name: "Torres", email: "luis@example.com",
-    country: "Peru", country_code: "PE", phone: "+51987654321",
-    profession: "Paramédico", license_number: "PAR-33333", experience_years: 4,
-    exam_interest: "ielts_academic", current_level: "A1", global_progress: 45,
-    daily_goal: 30, daily_minutes_today: 20, role: "student",
-    validation_status: "rejected", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 5,
-    last_active_date: new Date(Date.now() - 1 * 86400000).toISOString(), total_xp: 890,
-    exam_path: "ielts_academic", is_blocked: true,
-    created_at: "2026-03-15T00:00:00Z", updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-    speaking_score_avg: 3.5,
-  },
-  {
-    id: "6", first_name: "Sofia", last_name: "Ramirez", email: "sofia@example.com",
-    country: "Chile", country_code: "CL", phone: "+56212345678",
-    profession: "Enfermera", license_number: "ENF-44444", experience_years: 6,
-    exam_interest: "ielts_academic", current_level: "B1", global_progress: 91,
-    daily_goal: 45, daily_minutes_today: 50, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-03-01T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 18,
-    last_active_date: new Date().toISOString(), total_xp: 9800,
-    exam_path: "ielts_academic", is_blocked: false,
-    created_at: "2026-02-01T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.5,
-  },
-  {
-    id: "7", first_name: "Pedro", last_name: "Silva", email: "pedro@example.com",
-    country: "Brazil", country_code: "BR", phone: "+5511998765432",
-    profession: "Odontólogo", license_number: "ODO-55555", experience_years: 10,
-    exam_interest: "toefl_ibt", current_level: "C1", global_progress: 72,
-    daily_goal: 60, daily_minutes_today: 45, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-04-10T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 33,
-    last_active_date: new Date().toISOString(), total_xp: 15200,
-    exam_path: "toefl_ibt", is_blocked: false,
-    created_at: "2025-11-15T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 8.0,
-  },
-  {
-    id: "8", first_name: "Elena", last_name: "Diaz", email: "elena@example.com",
-    country: "Argentina", country_code: "AR", phone: "+541123456789",
-    profession: "Psicóloga", license_number: "PSI-66666", experience_years: 7,
-    exam_interest: "pte_academic", current_level: "A2", global_progress: 19,
-    daily_goal: 30, daily_minutes_today: 0, role: "student",
-    validation_status: "pending", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 0,
-    last_active_date: new Date(Date.now() - 10 * 86400000).toISOString(), total_xp: 200,
-    exam_path: null, is_blocked: false,
-    created_at: "2026-05-20T00:00:00Z", updated_at: new Date(Date.now() - 10 * 86400000).toISOString(),
-    speaking_score_avg: 4.5,
-  },
-];
 
 // ── Level order helper ──────────────────────────────────────────────────────
 
@@ -162,7 +46,9 @@ function getStatusBadge(status: string) {
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminStudentsPage() {
-  const [students] = useState<StudentWithProfile[]>(mockStudents);
+  const [students, setStudents] = useState<StudentWithProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actioningId, setActioningId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [validationFilter, setValidationFilter] = useState<string>("all");
@@ -171,6 +57,68 @@ export default function AdminStudentsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showValidationPhoto, setShowValidationPhoto] = useState<string | null>(null);
+
+  const fetchStudents = useCallback(async () => {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("role", "student");
+
+    if (error) {
+      toast.error("Failed to load students");
+    } else {
+      setStudents((data ?? []) as unknown as StudentWithProfile[]);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchStudents();
+  }, [fetchStudents]);
+
+  async function handleValidation(studentId: string, status: "approved" | "rejected") {
+    setActioningId(studentId);
+    const supabase = createClient();
+    const updates: Record<string, unknown> = { validation_status: status };
+    if (status === "approved") updates.validation_approved_at = new Date().toISOString();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from("profiles")
+      .update(updates)
+      .eq("id", studentId);
+
+    if (error) {
+      toast.error("Update failed");
+    } else {
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, ...updates } as StudentWithProfile : s))
+      );
+      toast.success(status === "approved" ? "Validation approved" : "Validation rejected");
+    }
+    setActioningId(null);
+  }
+
+  async function handleToggleBlock(studentId: string, currentlyBlocked: boolean) {
+    setActioningId(studentId);
+    const supabase = createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from("profiles")
+      .update({ is_blocked: !currentlyBlocked })
+      .eq("id", studentId);
+
+    if (error) {
+      toast.error("Update failed");
+    } else {
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, is_blocked: !currentlyBlocked } : s))
+      );
+      toast.success(currentlyBlocked ? "Student unblocked" : "Student blocked");
+    }
+    setActioningId(null);
+  }
 
   // Filter & sort
   const filtered = useMemo(() => {
@@ -247,6 +195,14 @@ export default function AdminStudentsPage() {
     setLevelFilter("all");
     setValidationFilter("all");
     setProfessionFilter("all");
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+      </div>
+    );
   }
 
   return (
@@ -481,7 +437,7 @@ export default function AdminStudentsPage() {
                               : "—"}
                           </span>
                           <span className="text-sm text-slate-400 tabular-nums hidden xl:block w-16">
-                            {(student as any).speaking_score_avg?.toFixed(1) ?? "—"}
+                            {student.speaking_score_avg?.toFixed(1) ?? "—"}
                           </span>
                           <span>
                             {student.is_blocked ? (
@@ -512,13 +468,17 @@ export default function AdminStudentsPage() {
                             {student.validation_status === "pending" && (
                               <>
                                 <button
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-success hover:bg-success/10 transition-colors"
+                                  onClick={() => handleValidation(student.id, "approved")}
+                                  disabled={actioningId === student.id}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-success hover:bg-success/10 transition-colors disabled:opacity-40"
                                   title="Approve Validation"
                                 >
                                   <CheckCircle className="w-4 h-4" />
                                 </button>
                                 <button
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors"
+                                  onClick={() => handleValidation(student.id, "rejected")}
+                                  disabled={actioningId === student.id}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40"
                                   title="Reject Validation"
                                 >
                                   <XCircle className="w-4 h-4" />
@@ -526,7 +486,9 @@ export default function AdminStudentsPage() {
                               </>
                             )}
                             <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors"
+                              onClick={() => handleToggleBlock(student.id, student.is_blocked)}
+                              disabled={actioningId === student.id}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40"
                               title={student.is_blocked ? "Unblock" : "Block"}
                             >
                               <UserX className="w-4 h-4" />
@@ -615,14 +577,18 @@ export default function AdminStudentsPage() {
                                   />
                                 </div>
 
-                                {/* Recent Messages Preview */}
+                                {/* Recent Messages */}
                                 <div className="space-y-2 md:col-span-2 lg:col-span-3">
                                   <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                                    Recent Messages
+                                    Messages
                                   </h4>
-                                  <p className="text-xs text-slate-500 italic">
-                                    No recent messages with this student.
-                                  </p>
+                                  <a
+                                    href={`/admin/messages?student=${student.id}`}
+                                    className="inline-flex items-center gap-1.5 text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    Open conversation
+                                  </a>
                                 </div>
                               </div>
                             </motion.div>

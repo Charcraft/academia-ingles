@@ -5,6 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Levels that still get bilingual (Spanish) scaffolding in lessons —
+// scaled down as the student advances toward full-English immersion at B1+.
+const NATIVE_SUPPORT_LEVELS = ["A0", "A1"];
+
+export function needsNativeLanguageSupport(level: string): boolean {
+  return NATIVE_SUPPORT_LEVELS.includes(level);
+}
+
 export function formatMinutes(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;

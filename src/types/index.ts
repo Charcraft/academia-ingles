@@ -145,6 +145,7 @@ export interface SpeakingRecording {
 // Admin types
 export interface StudentWithProfile extends Profile {
   last_progress?: UserProgress;
+  speaking_score_avg?: number;
 }
 
 export interface AdminAlert {

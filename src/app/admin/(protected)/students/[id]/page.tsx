@@ -26,108 +26,25 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import toast from "react-hot-toast";
 import { cn, timeAgo, getCEFRBadgeColor, getValidationBadge, getProfessionIcon, formatMinutes } from "@/lib/utils";
 import { countries } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
 import type { StudentWithProfile } from "@/types";
 
-// ── Mock Data ─────────────────────────────────────────────────────────────────
+interface ActivityLogItem {
+  id: string;
+  lesson: string;
+  level: string;
+  score: number | null;
+  time_spent: number;
+  completed_at: string;
+}
 
-const allMockStudents: StudentWithProfile[] = [
-  {
-    id: "1", first_name: "Maria", last_name: "Garcia", email: "maria@example.com",
-    country: "Mexico", country_code: "MX", phone: "+521234567890",
-    profession: "Enfermera", license_number: "ENF-12345", experience_years: 5,
-    exam_interest: "ielts_academic", current_level: "A2", global_progress: 35,
-    daily_goal: 30, daily_minutes_today: 15, role: "student",
-    validation_status: "pending", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 12,
-    last_active_date: new Date().toISOString(), total_xp: 1250,
-    exam_path: "ielts_academic", is_blocked: false,
-    created_at: "2026-01-15T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 5.5,
-  },
-  {
-    id: "2", first_name: "Carlos", last_name: "Lopez", email: "carlos@example.com",
-    country: "Colombia", country_code: "CO", phone: "+573001234567",
-    profession: "Enfermero", license_number: "ENF-67890", experience_years: 3,
-    exam_interest: "toefl_ibt", current_level: "B1", global_progress: 62,
-    daily_goal: 45, daily_minutes_today: 40, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-02-10T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 28,
-    last_active_date: new Date().toISOString(), total_xp: 4800,
-    exam_path: "toefl_ibt", is_blocked: false,
-    created_at: "2026-01-20T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 6.5,
-  },
-  {
-    id: "3", first_name: "Juan", last_name: "Dela Cruz", email: "juan@example.com",
-    country: "Philippines", country_code: "PH", phone: "+639123456789",
-    profession: "Fisioterapeuta", license_number: "FIS-11111", experience_years: 2,
-    exam_interest: "undecided", current_level: "A0", global_progress: 8,
-    daily_goal: 20, daily_minutes_today: 0, role: "student",
-    validation_status: "pending", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 0,
-    last_active_date: new Date(Date.now() - 8 * 86400000).toISOString(), total_xp: 120,
-    exam_path: null, is_blocked: false,
-    created_at: "2026-06-01T00:00:00Z", updated_at: new Date(Date.now() - 8 * 86400000).toISOString(),
-    speaking_score_avg: 4.0,
-  },
-  {
-    id: "4", first_name: "Ana", last_name: "Martinez", email: "ana@example.com",
-    country: "Spain", country_code: "ES", phone: "+34600123456",
-    profession: "Doctora", license_number: "DOC-22222", experience_years: 8,
-    exam_interest: "pte_academic", current_level: "B2", global_progress: 88,
-    daily_goal: 60, daily_minutes_today: 55, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-01-25T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 45,
-    last_active_date: new Date().toISOString(), total_xp: 12500,
-    exam_path: "pte_academic", is_blocked: false,
-    created_at: "2025-12-01T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.0,
-  },
-  {
-    id: "6", first_name: "Sofia", last_name: "Ramirez", email: "sofia@example.com",
-    country: "Chile", country_code: "CL", phone: "+56212345678",
-    profession: "Enfermera", license_number: "ENF-44444", experience_years: 6,
-    exam_interest: "ielts_academic", current_level: "B1", global_progress: 91,
-    daily_goal: 45, daily_minutes_today: 50, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: "2026-03-01T00:00:00Z", validation_photo_delete_at: null,
-    avatar_url: null, streak: 18,
-    last_active_date: new Date().toISOString(), total_xp: 9800,
-    exam_path: "ielts_academic", is_blocked: false,
-    created_at: "2026-02-01T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.5,
-  },
-];
-
-// ── Mock Activity Log ────────────────────────────────────────────────────────
-
-const mockActivityLog = [
-  { id: "a1", lesson: "Medical Vocabulary - Symptoms", level: "A2", score: 85, time_spent: 22, completed_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: "a2", lesson: "Grammar - Present Tenses", level: "A2", score: 78, time_spent: 18, completed_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-  { id: "a3", lesson: "Listening - Patient Intake", level: "A2", score: 92, time_spent: 25, completed_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: "a4", lesson: "Speaking Practice - Introductions", level: "A2", score: 70, time_spent: 15, completed_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: "a5", lesson: "Checkpoint A1 Review", level: "A1", score: 90, time_spent: 30, completed_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: "a6", lesson: "Basic Greetings", level: "A0", score: 95, time_spent: 12, completed_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: "a7", lesson: "Medical Equipment Terms", level: "A1", score: 82, time_spent: 20, completed_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() },
-];
-
-// ── Mock Speaking Scores ─────────────────────────────────────────────────────
-
-const mockSpeakingScores = [
-  { date: "Jul 1", score: 4.5 },
-  { date: "Jul 5", score: 5.0 },
-  { date: "Jul 8", score: 5.0 },
-  { date: "Jul 12", score: 5.5 },
-  { date: "Jul 15", score: 5.5 },
-  { date: "Jul 18", score: 6.0 },
-  { date: "Jul 20", score: 5.5 },
-];
+interface SpeakingScorePoint {
+  date: string;
+  score: number;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -143,20 +60,115 @@ export default function StudentDetailPage() {
   const studentId = params.id as string;
 
   const [student, setStudent] = useState<StudentWithProfile | null>(null);
+  const [activityLog, setActivityLog] = useState<ActivityLogItem[]>([]);
+  const [speakingScores, setSpeakingScores] = useState<SpeakingScorePoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actioning, setActioning] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [validationStatus, setValidationStatus] = useState<string>("pending");
 
   useEffect(() => {
-    const found = allMockStudents.find((s) => s.id === studentId);
-    if (found) {
-      setStudent(found);
-      setIsBlocked(found.is_blocked);
-      setValidationStatus(found.validation_status);
+    async function load() {
+      const supabase = createClient();
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", studentId)
+        .single();
+
+      if (profile) {
+        const p = profile as unknown as StudentWithProfile;
+        setStudent(p);
+        setIsBlocked(p.is_blocked);
+        setValidationStatus(p.validation_status);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: progress } = await (supabase as any)
+        .from("user_progress")
+        .select("id, score, time_spent, completed_at, lessons(title, level)")
+        .eq("user_id", studentId)
+        .eq("completed", true)
+        .order("completed_at", { ascending: false })
+        .limit(10);
+
+      setActivityLog(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((progress ?? []) as any[]).map((a) => ({
+          id: a.id,
+          lesson: a.lessons?.title ?? "Lesson",
+          level: a.lessons?.level ?? "",
+          score: a.score,
+          time_spent: a.time_spent,
+          completed_at: a.completed_at,
+        }))
+      );
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: recordings } = await (supabase as any)
+        .from("speaking_recordings")
+        .select("band_score_estimate, created_at")
+        .eq("user_id", studentId)
+        .not("band_score_estimate", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(10);
+
+      setSpeakingScores(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((recordings ?? []) as any[])
+          .filter((r) => r.band_score_estimate !== null)
+          .map((r) => ({
+            date: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            score: r.band_score_estimate as number,
+          }))
+      );
+
+      setLoading(false);
     }
-    setLoading(false);
+    load();
   }, [studentId]);
+
+  async function persistValidation(status: "approved" | "rejected") {
+    setActioning(true);
+    const supabase = createClient();
+    const updates: Record<string, unknown> = { validation_status: status };
+    if (status === "approved") updates.validation_approved_at = new Date().toISOString();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from("profiles")
+      .update(updates)
+      .eq("id", studentId);
+
+    if (error) {
+      toast.error("Update failed");
+    } else {
+      setValidationStatus(status);
+      toast.success(status === "approved" ? "Validation approved" : "Validation rejected");
+    }
+    setActioning(false);
+  }
+
+  async function persistBlock() {
+    setActioning(true);
+    const supabase = createClient();
+    const nextBlocked = !isBlocked;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from("profiles")
+      .update({ is_blocked: nextBlocked })
+      .eq("id", studentId);
+
+    if (error) {
+      toast.error("Update failed");
+    } else {
+      setIsBlocked(nextBlocked);
+      toast.success(nextBlocked ? "Student blocked" : "Student unblocked");
+    }
+    setActioning(false);
+  }
 
   if (loading) {
     return (
@@ -206,9 +218,10 @@ export default function StudentDetailPage() {
             Chat
           </a>
           <button
-            onClick={() => setIsBlocked(!isBlocked)}
+            onClick={persistBlock}
+            disabled={actioning}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
+              "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-40",
               isBlocked
                 ? "bg-success/10 text-success hover:bg-success/20"
                 : "bg-danger/10 text-danger hover:bg-danger/20"
@@ -216,10 +229,6 @@ export default function StudentDetailPage() {
           >
             <UserX className="w-4 h-4" />
             {isBlocked ? "Unblock" : "Block"}
-          </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-warning/10 text-warning text-sm font-medium hover:bg-warning/20 transition-colors">
-            <Shield className="w-4 h-4" />
-            Deactivate
           </button>
         </div>
       </div>
@@ -299,7 +308,12 @@ export default function StudentDetailPage() {
               <div className="bg-charcoal-900 rounded-xl p-3">
                 <p className="text-xs text-slate-500 mb-1">Speaking Avg</p>
                 <p className="text-lg font-bold text-slate-200">
-                  {(student as any).speaking_score_avg?.toFixed(1) ?? "—"}
+                  {speakingScores.length > 0
+                    ? (
+                        speakingScores.reduce((sum, s) => sum + s.score, 0) /
+                        speakingScores.length
+                      ).toFixed(1)
+                    : "—"}
                 </p>
               </div>
             </div>
@@ -424,15 +438,17 @@ export default function StudentDetailPage() {
             {validationStatus === "pending" && (
               <div className="flex gap-2 pt-2">
                 <button
-                  onClick={() => setValidationStatus("approved")}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-success/10 text-success text-sm font-medium hover:bg-success/20 transition-colors"
+                  onClick={() => persistValidation("approved")}
+                  disabled={actioning}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-success/10 text-success text-sm font-medium hover:bg-success/20 transition-colors disabled:opacity-40"
                 >
                   <CheckCircle className="w-4 h-4" />
                   Approve
                 </button>
                 <button
-                  onClick={() => setValidationStatus("rejected")}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-danger/10 text-danger text-sm font-medium hover:bg-danger/20 transition-colors"
+                  onClick={() => persistValidation("rejected")}
+                  disabled={actioning}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-danger/10 text-danger text-sm font-medium hover:bg-danger/20 transition-colors disabled:opacity-40"
                 >
                   <XCircle className="w-4 h-4" />
                   Reject
@@ -514,10 +530,15 @@ export default function StudentDetailPage() {
           <Zap className="w-4 h-4" />
           Speaking Scores
         </h3>
+        {speakingScores.length === 0 ? (
+          <div className="h-64 flex items-center justify-center text-sm text-slate-500">
+            No speaking recordings yet.
+          </div>
+        ) : (
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={mockSpeakingScores}
+              data={speakingScores}
               margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
             >
               <XAxis
@@ -551,6 +572,7 @@ export default function StudentDetailPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        )}
       </motion.div>
 
       {/* Activity Log */}
@@ -566,7 +588,10 @@ export default function StudentDetailPage() {
         </h3>
 
         <div className="space-y-0 divide-y divide-charcoal-800">
-          {mockActivityLog.map((act, i) => (
+          {activityLog.length === 0 && (
+            <p className="text-sm text-slate-500 py-3">No completed lessons yet.</p>
+          )}
+          {activityLog.map((act, i) => (
             <motion.div
               key={act.id}
               initial={{ opacity: 0, x: -4 }}
@@ -590,14 +615,14 @@ export default function StudentDetailPage() {
                 <span
                   className={cn(
                     "text-sm font-semibold tabular-nums",
-                    act.score >= 80
+                    (act.score ?? 0) >= 80
                       ? "text-success"
-                      : act.score >= 60
+                      : (act.score ?? 0) >= 60
                       ? "text-warning"
                       : "text-danger"
                   )}
                 >
-                  {act.score}%
+                  {act.score !== null ? `${act.score}%` : "—"}
                 </span>
               </div>
             </motion.div>
@@ -633,18 +658,19 @@ export default function StudentDetailPage() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="bg-charcoal-800 rounded-xl h-80 flex items-center justify-center">
-                <p className="text-slate-500 text-sm">
-                  Photo placeholder — connect to Supabase Storage
-                </p>
+              <div className="bg-charcoal-800 rounded-xl h-80 flex items-center justify-center overflow-hidden">
+                {student.validation_photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={student.validation_photo_url}
+                    alt="Validation document"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                ) : (
+                  <p className="text-slate-500 text-sm">No photo uploaded</p>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-4">
-                <button className="px-3 py-1.5 rounded-lg bg-charcoal-800 text-slate-300 text-xs hover:bg-charcoal-700 transition-colors">
-                  Zoom In
-                </button>
-                <button className="px-3 py-1.5 rounded-lg bg-charcoal-800 text-slate-300 text-xs hover:bg-charcoal-700 transition-colors">
-                  Zoom Out
-                </button>
                 <span className="ml-auto text-xs text-slate-500">
                   Photo auto-deletes 30 days after approval
                 </span>

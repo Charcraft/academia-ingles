@@ -30,7 +30,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body className="min-h-screen bg-[#121212] font-sans text-slate-100 antialiased">
+      <body className={`${inter.className} min-h-screen bg-[#121212] font-sans text-slate-100 antialiased`}>
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

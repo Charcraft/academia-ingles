@@ -41,7 +41,7 @@ export default function AdminLayout({
       } = await supabase.auth.getUser();
 
       if (!user) {
-        router.replace("/login");
+        router.replace("/admin/login");
         return;
       }
 

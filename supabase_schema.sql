@@ -50,12 +50,32 @@ CREATE TABLE profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- FUNCTION: Check if the current user is an admin/case_manager.
+-- SECURITY DEFINER so this bypasses RLS on `profiles` internally and
+-- avoids infinite recursion when used inside a policy ON profiles itself.
+CREATE OR REPLACE FUNCTION is_admin_or_case_manager(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = uid AND role IN ('admin', 'case_manager')
+  );
+$$;
+
 -- RLS: Profiles
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can view own profile"
   ON profiles FOR SELECT
   USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Users can update own profile"
   ON profiles FOR UPDATE
@@ -64,21 +84,53 @@ CREATE POLICY "Users can update own profile"
 
 CREATE POLICY "Admins can view all profiles"
   ON profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
 
 CREATE POLICY "Admins can update any profile"
   ON profiles FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
+
+-- SECURITY: RLS above only checks WHICH ROW a user may touch, not WHICH
+-- COLUMNS. Without this trigger, "Users can update own profile" lets any
+-- student PATCH their own row and set role='admin', is_blocked=false,
+-- validation_status='approved', total_xp=999999, etc. This trigger silently
+-- reverts privileged fields back to their previous value unless the caller
+-- is staff (admin/case_manager).
+--
+-- IMPORTANT: only enforced when auth.uid() is present, i.e. the update came
+-- from the app through Supabase Auth (PostgREST as anon/authenticated).
+-- Direct SQL (Supabase SQL Editor, service_role, migrations) has no JWT and
+-- auth.uid() returns NULL there — that context is already fully trusted
+-- (it bypasses RLS entirely too), so this trigger must not fight it.
+CREATE OR REPLACE FUNCTION protect_profile_privileged_fields()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND NOT is_admin_or_case_manager(auth.uid()) THEN
+    NEW.role := OLD.role;
+    NEW.is_blocked := OLD.is_blocked;
+    NEW.validation_status := OLD.validation_status;
+    NEW.validation_approved_at := OLD.validation_approved_at;
+    NEW.validation_photo_delete_at := OLD.validation_photo_delete_at;
+    NEW.total_xp := OLD.total_xp;
+    NEW.streak := OLD.streak;
+    NEW.global_progress := OLD.global_progress;
+    NEW.current_level := OLD.current_level;
+    NEW.id := OLD.id;
+    NEW.email := OLD.email;
+    NEW.created_at := OLD.created_at;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER protect_profile_fields
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION protect_profile_privileged_fields();
 
 -- ============================================================
 -- LESSONS TABLE
@@ -108,12 +160,7 @@ CREATE POLICY "Authenticated users can view lessons"
 
 CREATE POLICY "Admins can manage lessons"
   ON lessons FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
 
 -- ============================================================
 -- USER PROGRESS
@@ -150,12 +197,7 @@ CREATE POLICY "Users can update own progress"
 
 CREATE POLICY "Admins can view all progress"
   ON user_progress FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
 
 -- ============================================================
 -- PLACEMENT TEST RESULTS
@@ -182,12 +224,7 @@ CREATE POLICY "Users can insert own placement"
 
 CREATE POLICY "Admins can view all placements"
   ON placement_results FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
 
 -- ============================================================
 -- MESSAGES (Chat Admin <-> Student)
@@ -239,12 +276,7 @@ CREATE POLICY "Users can view own subscription"
 
 CREATE POLICY "Admins can manage subscriptions"
   ON subscriptions FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
 
 -- ============================================================
 -- SPEAKING RECORDINGS (for AI evaluation)
@@ -270,12 +302,7 @@ CREATE POLICY "Users can manage own recordings"
 
 CREATE POLICY "Admins can view recordings"
   ON speaking_recordings FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'case_manager')
-    )
-  );
+  USING (is_admin_or_case_manager(auth.uid()));
 
 -- ============================================================
 -- INDEXES
@@ -299,7 +326,7 @@ BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public;
 
 CREATE TRIGGER profiles_updated_at
   BEFORE UPDATE ON profiles
@@ -328,7 +355,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
@@ -377,7 +404,7 @@ INSERT INTO lessons (level, "order", title, subtitle, description, vocab_healthc
 
 ('A0', 2, 'Parts of the Body', 'Partes del cuerpo', 'Essential vocabulary for body parts in medical contexts. Vocabulario esencial de partes del cuerpo.',
  '[{"en":"head","es":"cabeza","context":"Patient assessment"},{"en":"arm","es":"brazo","context":"Taking blood pressure"},{"en":"leg","es":"pierna","context":"Mobility assessment"},{"en":"chest","es":"pecho","context":"Listening to heartbeat"},{"en":"back","es":"espalda","context":"Pain assessment"}]'::jsonb,
- '{"topic":"Articles: a/an/the","explanation":"A before consonant, An before vowel, The for specific","examples":["a headache","an arm injury","the patient"}'::jsonb,
+ '{"topic":"Articles: a/an/the","explanation":"A before consonant, An before vowel, The for specific","examples":["a headache","an arm injury","the patient"]}'::jsonb,
  '{"listening":{"script":"The patient has pain in his left arm. Please check his blood pressure.","questions":[{"q":"Where is the pain?","options":["Right arm","Left arm","Chest"],"correct":1}]},"quiz":[{"q":"The patient has ___ headache","options":["a","an","the"],"correct":0},{"q":"She has ___ ear infection","options":["a","an","the"],"correct":1}]}'::jsonb,
  false, 20),
 
@@ -403,6 +430,68 @@ INSERT INTO lessons (level, "order", title, subtitle, description, vocab_healthc
  '[{"en":"headache","es":"dolor de cabeza","context":"Pain assessment"},{"en":"fever","es":"fiebre","context":"Vital signs"},{"en":"cough","es":"tos","context":"Respiratory"},{"en":"nausea","es":"náusea","context":"General symptoms"},{"en":"dizziness","es":"mareo","context":"General symptoms"}]'::jsonb,
  '{"topic":"Present Simple Questions","explanation":"Do/Does for questions","examples":["Do you have a headache?","Does the patient have fever?"]}'::jsonb,
  '{"listening":{"script":"Patient says: I have a bad headache and I feel dizzy. I also have a cough since yesterday.","questions":[{"q":"How many symptoms does the patient mention?","options":["Two","Three","Four"],"correct":1}]},"quiz":[{"q":"___ you have a fever?","options":["Do","Does","Is"],"correct":0},{"q":"The patient complains of ___ and dizziness","options":["fever","headache","cough"],"correct":1}]}'::jsonb,
+ false, 20),
+
+-- A1 Lessons (bilingual ES/EN scaffolding, same as A0)
+('A1', 1, 'Meeting the Patient', 'Preguntas básicas al paciente', 'Learn to ask basic questions when meeting a new patient. Aprende a hacer preguntas básicas al conocer a un nuevo paciente.',
+ '[{"en":"What''s your name?","es":"¿Cómo te llamas?","context":"Patient intake"},{"en":"How old are you?","es":"¿Cuántos años tienes?","context":"Patient intake"},{"en":"Where are you from?","es":"¿De dónde eres?","context":"Getting to know the patient"},{"en":"date of birth","es":"fecha de nacimiento","context":"Registration form"},{"en":"occupation","es":"ocupación","context":"Patient profile"}]'::jsonb,
+ '{"topic":"Present Simple - WH Questions","explanation":"Use What, How, Where + is/do/does to ask about facts. Usa What, How, Where + is/do/does para preguntar datos.","examples":["What''s your name?","How old are you?","Where do you live?","What''s your occupation?"]}'::jsonb,
+ '{"listening":{"script":"Good morning. Can I ask you a few questions? What''s your name, please? And how old are you? Where are you from originally?","questions":[{"q":"What is the nurse asking about?","options":["Symptoms","Personal information","Medication"],"correct":1}]},"quiz":[{"q":"___ is your name?","options":["What","Where","How"],"correct":0},{"q":"___ old are you?","options":["What","How","Where"],"correct":1}]}'::jsonb,
+ false, 20),
+
+('A1', 2, 'Daily Ward Routine', 'Present Simple para rutinas', 'Talk about daily hospital routines and schedules. Habla sobre las rutinas y horarios diarios del hospital.',
+ '[{"en":"wake up","es":"despertarse","context":"Morning routine"},{"en":"check vitals","es":"revisar signos vitales","context":"Nursing routine"},{"en":"shift","es":"turno","context":"Work schedule"},{"en":"every morning","es":"cada mañana","context":"Frequency"},{"en":"medication round","es":"ronda de medicamentos","context":"Ward routine"}]'::jsonb,
+ '{"topic":"Present Simple for Routines","explanation":"Use Present Simple (+s for he/she/it) to talk about habits and routines. Usa el presente simple (+s para he/she/it) para hablar de hábitos y rutinas.","examples":["The nurse checks vitals every morning.","I start my shift at 7am.","Patients wake up at 6am.","We do medication rounds twice a day."]}'::jsonb,
+ '{"listening":{"script":"My shift starts at seven in the morning. First, I check the patients'' vital signs. Then, at eight, we do the medication round. Lunch is at noon.","questions":[{"q":"What time does the shift start?","options":["6am","7am","8am"],"correct":1}]},"quiz":[{"q":"The nurse ___ vitals every morning.","options":["check","checks","checking"],"correct":1},{"q":"I ___ my shift at 7am.","options":["start","starts","starting"],"correct":0}]}'::jsonb,
+ false, 20),
+
+('A1', 3, 'Family & Emergency Contact', 'Posesivos y vocabulario familiar', 'Ask about a patient''s family and emergency contact information. Pregunta sobre la familia del paciente y su contacto de emergencia.',
+ '[{"en":"emergency contact","es":"contacto de emergencia","context":"Admission form"},{"en":"spouse","es":"cónyuge / esposo(a)","context":"Family information"},{"en":"next of kin","es":"pariente más cercano","context":"Hospital records"},{"en":"relationship","es":"parentesco","context":"Emergency contact form"},{"en":"phone number","es":"número de teléfono","context":"Contact details"}]'::jsonb,
+ '{"topic":"Possessive ''s and Family Vocabulary","explanation":"Use ''s to show who something belongs to. Usa ''s para mostrar posesión (ej. the patient''s husband).","examples":["What''s your husband''s name?","This is my sister''s number.","Who is the patient''s next of kin?","Her mother''s phone number is..."]}'::jsonb,
+ '{"listening":{"script":"Can you give me your emergency contact, please? What''s your spouse''s name and phone number? What is their relationship to you?","questions":[{"q":"What is the nurse asking for?","options":["Medical history","Emergency contact information","Insurance details"],"correct":1}]},"quiz":[{"q":"This is my ___ number. (sister)","options":["sister","sister''s","sisters"],"correct":1},{"q":"Who is the patient''s ___ of kin?","options":["next","near","close"],"correct":0}]}'::jsonb,
+ false, 20),
+
+('A1', 4, 'Checkpoint: Basic Patient Interaction', 'Evaluación: Interacción básica con el paciente', 'Review greetings, patient questions, routines, and family vocabulary. Repaso de preguntas al paciente, rutinas y vocabulario familiar.',
+ '[]'::jsonb,
+ '{"topic":"Review","explanation":"Review of lessons 1-3","examples":[]}'::jsonb,
+ '{"is_checkpoint":true,"review_lessons":[1,2,3],"passing_score":70,"questions":[{"q":"How do you ask a patient''s name?","options":["What''s your name?","How''s your name?","Who''s your name?"],"correct":0},{"q":"''Every morning'' shows a:","options":["Single event","Routine/habit","Question"],"correct":1},{"q":"''Next of kin'' means:","options":["Doctor","Closest relative","Medicine"],"correct":1},{"q":"The nurse ___ (check) vitals every day.","options":["check","checks","checking"],"correct":1},{"q":"''Occupation'' means:","options":["Job","Age","Address"],"correct":0}]}'::jsonb,
+ true, 25),
+
+('A1', 5, 'How Are You Feeling?', 'Expresar sentimientos y necesidades básicas', 'Learn to describe how you feel and express basic needs. Aprende a describir cómo te sientes y expresar necesidades básicas.',
+ '[{"en":"I feel...","es":"me siento...","context":"Describing feelings"},{"en":"I have pain","es":"tengo dolor","context":"Describing symptoms"},{"en":"pain scale","es":"escala de dolor","context":"Pain assessment"},{"en":"I need...","es":"necesito...","context":"Expressing needs"},{"en":"thirsty / hungry","es":"con sed / con hambre","context":"Basic needs"}]'::jsonb,
+ '{"topic":"I feel / I have / I need","explanation":"Use ''I feel'' + adjective, ''I have'' + noun, and ''I need'' + noun to talk about your state and needs. Usa ''I feel'' + adjetivo, ''I have'' + sustantivo, ''I need'' + sustantivo.","examples":["I feel dizzy.","I have a headache.","I need some water.","I feel better today."]}'::jsonb,
+ '{"listening":{"script":"On a scale from one to ten, how much pain do you feel? I feel a lot of pain, maybe an eight. I also feel a little dizzy and I need some water.","questions":[{"q":"How much pain does the patient feel?","options":["Two","Five","Eight"],"correct":2}]},"quiz":[{"q":"I ___ dizzy.","options":["feel","have","need"],"correct":0},{"q":"I ___ a headache.","options":["feel","have","am"],"correct":1}]}'::jsonb,
+ false, 20),
+
+-- A2 Lessons (English-primary, definition-style vocab like B1)
+('A2', 1, 'What Happened? Taking a Brief History', 'Simple Past for Patient History', 'Ask and describe what happened using the simple past tense.',
+ '[{"en":"fall","definition":"To drop down suddenly by accident","context":"Injury history"},{"en":"onset","definition":"The moment a symptom or illness begins","context":"Medical history"},{"en":"twist","definition":"To injure a joint by turning it awkwardly","context":"Injury description"},{"en":"collapse","definition":"To suddenly fall down, often from weakness or fainting","context":"Emergency history"},{"en":"since","definition":"From a point in the past until now","context":"Duration of symptoms"}]'::jsonb,
+ '{"topic":"Simple Past Tense","explanation":"Use the simple past to describe completed actions or events. Regular verbs add -ed (twisted, collapsed); many common verbs are irregular (fall→fell, break→broke).","examples":["The pain started yesterday.","She fell down the stairs.","He twisted his ankle.","I felt dizzy this morning."]}'::jsonb,
+ '{"listening":{"script":"Tell me what happened. I was walking down the stairs and I fell. I twisted my ankle and it started to swell immediately.","questions":[{"q":"What did the patient injure?","options":["Wrist","Ankle","Knee"],"correct":1}]},"quiz":[{"q":"The pain ___ (start) yesterday.","options":["start","started","starts"],"correct":1},{"q":"She ___ (fall) down the stairs.","options":["fall","falled","fell"],"correct":2}]}'::jsonb,
+ false, 20),
+
+('A2', 2, 'Comparing Symptoms', 'Comparatives for Describing Change', 'Describe whether symptoms are improving or worsening using comparatives.',
+ '[{"en":"worse","definition":"More severe or bad than before","context":"Symptom comparison"},{"en":"better","definition":"Improved compared to before","context":"Symptom comparison"},{"en":"higher","definition":"Greater in level or amount","context":"Vital signs comparison"},{"en":"lower","definition":"Smaller in level or amount","context":"Vital signs comparison"},{"en":"than before","definition":"Compared to an earlier time","context":"Describing change"}]'::jsonb,
+ '{"topic":"Comparative Adjectives","explanation":"Use comparatives to compare two states. Short adjectives add -er (higher, lower); irregular ones change completely (bad→worse, good→better).","examples":["Is the pain better or worse today?","My fever is higher than yesterday.","I feel worse than before.","Her blood pressure is lower now."]}'::jsonb,
+ '{"listening":{"script":"How do you feel compared to yesterday? Actually, I feel much better. The pain is less than before, but I still feel a little weak.","questions":[{"q":"How does the patient feel today?","options":["Worse","Better","The same"],"correct":1}]},"quiz":[{"q":"My fever is ___ than yesterday. (high)","options":["high","higher","highest"],"correct":1},{"q":"I feel ___ today. (bad → comparative)","options":["worse","bad","badder"],"correct":0}]}'::jsonb,
+ false, 20),
+
+('A2', 3, 'Instructions & Procedures', 'Imperatives and Sequencing', 'Give clear step-by-step instructions using imperatives and sequence words.',
+ '[{"en":"first","definition":"Used to introduce the initial step","context":"Sequencing instructions"},{"en":"then / next","definition":"Used to introduce the following step","context":"Sequencing instructions"},{"en":"finally","definition":"Used to introduce the last step","context":"Sequencing instructions"},{"en":"breathe in / breathe out","definition":"To inhale / to exhale","context":"Physical exam instructions"},{"en":"hold still","definition":"Do not move","context":"Procedure instructions"}]'::jsonb,
+ '{"topic":"Imperatives for Instructions","explanation":"Use the base form of the verb (no subject) to give instructions. Sequence words like first, then, next, finally help organize steps clearly.","examples":["First, take a deep breath.","Then, hold it for five seconds.","Next, breathe out slowly.","Finally, relax your arm."]}'::jsonb,
+ '{"listening":{"script":"Please follow my instructions. First, sit down and relax. Then, breathe in slowly through your nose. Hold it for three seconds. Finally, breathe out through your mouth.","questions":[{"q":"What is the first instruction?","options":["Breathe out","Sit down and relax","Hold your breath"],"correct":1}]},"quiz":[{"q":"___, take a deep breath. (first step)","options":["First","Finally","Then"],"correct":0},{"q":"Please ___ still while I check your arm.","options":["holds","hold","holding"],"correct":1}]}'::jsonb,
+ false, 20),
+
+('A2', 4, 'Checkpoint: Describing Change and Giving Instructions', 'Evaluación: Historia clínica, comparativos e instrucciones', 'Review past tense history-taking, comparatives, and giving instructions.',
+ '[]'::jsonb,
+ '{"topic":"Review","explanation":"Review of lessons 1-3","examples":[]}'::jsonb,
+ '{"is_checkpoint":true,"review_lessons":[1,2,3],"passing_score":70,"questions":[{"q":"She ___ (fall) down the stairs.","options":["fall","falled","fell"],"correct":2},{"q":"My fever is ___ than yesterday. (high)","options":["high","higher","highest"],"correct":1},{"q":"___, take a deep breath. (first step)","options":["First","Finally","Then"],"correct":0},{"q":"''Onset'' means:","options":["The end of an illness","The beginning of a symptom","A type of medicine"],"correct":1},{"q":"''Hold still'' means:","options":["Move quickly","Do not move","Breathe deeply"],"correct":1}]}'::jsonb,
+ true, 25),
+
+('A2', 5, 'Family Medical History', 'Have/Has for Family Health Background', 'Ask about a patient''s family medical history using have/has.',
+ '[{"en":"family history","definition":"Health conditions that run in a patient''s family","context":"Medical history form"},{"en":"diabetes","definition":"A condition causing high blood sugar","context":"Common chronic condition"},{"en":"heart disease","definition":"A condition affecting the heart","context":"Common chronic condition"},{"en":"allergic to","definition":"Having a bad reaction to a substance","context":"Allergy history"},{"en":"run in the family","definition":"To be a health condition common among relatives","context":"Family history idiom"}]'::jsonb,
+ '{"topic":"Have/Has for Possession and Health Conditions","explanation":"Use ''have'' with I/you/we/they and ''has'' with he/she/it to talk about health conditions.","examples":["Does your mother have diabetes?","My father has heart disease.","Do you have any allergies?","She has no family history of cancer."]}'::jsonb,
+ '{"listening":{"script":"Does anyone in your family have diabetes or heart disease? Yes, my father has heart disease and my grandmother had diabetes.","questions":[{"q":"What condition does the patient''s father have?","options":["Diabetes","Heart disease","Allergies"],"correct":1}]},"quiz":[{"q":"___ your mother have diabetes?","options":["Does","Do","Is"],"correct":0},{"q":"My father ___ heart disease.","options":["have","has","having"],"correct":1}]}'::jsonb,
  false, 20),
 
 -- B1 Lessons (all in English, real healthcare scenarios)
@@ -440,6 +529,70 @@ INSERT INTO lessons (level, "order", title, subtitle, description, vocab_healthc
  '[{"en":"personal protective equipment","definition":"Equipment worn to minimize exposure to hazards","context":"Infection prevention"},{"en":"hand hygiene","definition":"Cleaning hands to prevent transmission of pathogens","context":"Standard precautions"},{"en":"transmission-based precautions","definition":"Additional infection control measures for specific diseases","context":"Isolation protocols"},{"en":"aseptic technique","definition":"Practices to maintain sterility and prevent contamination","context":"Clinical procedures"},{"en":"nosocomial infection","definition":"An infection acquired in a healthcare facility","context":"Patient safety"}]'::jsonb,
  '{"topic":"Modal Verbs for Protocols","explanation":"Must, should, have to for clinical obligations","examples":["You must wash your hands before patient contact","PPE should be worn in isolation rooms","Staff have to complete annual infection control training"]}'::jsonb,
  '{"listening":{"script":"Attention all staff: we have a confirmed case of MRSA in Ward 3. Contact precautions are now in effect. You must wear gloves and a gown when entering the patient''s room. Hand hygiene must be performed before and after patient contact. The patient has been moved to a single room. Visitors are limited to two at a time and must also wear PPE.","questions":[{"q":"What type of precautions are in effect?","options":["Droplet precautions","Contact precautions","Airborne precautions"],"correct":1},{"q":"What PPE is required?","options":["Gloves only","Gloves and gown","Full PPE including N95"],"correct":1}]},"quiz":[{"q":"You ___ wash hands before patient contact","options":["might","must","could"],"correct":1},{"q":"A nosocomial infection is acquired in a...","options":["Community","Healthcare facility","School"],"correct":1}]}'::jsonb,
+ false, 30);
+
+-- B2 Lessons (English-primary, definition-style vocab like B1)
+INSERT INTO lessons (level, "order", title, subtitle, description, vocab_healthcare, grammar_point, content, is_checkpoint, duration_minutes) VALUES
+('B2', 1, 'Explaining Diagnosis & Treatment Options', 'Modals for Advice and Possibility', 'Explain diagnoses and discuss treatment options using modal verbs.',
+ '[{"en":"prognosis","definition":"The likely course or outcome of a medical condition","context":"Discussing diagnosis"},{"en":"side effect","definition":"An unwanted effect of a medication or treatment","context":"Treatment options"},{"en":"recommend","definition":"To suggest something as the best option","context":"Giving medical advice"},{"en":"underlying condition","definition":"A health problem that is the root cause of symptoms","context":"Diagnosis"},{"en":"risk factor","definition":"Something that increases the chance of developing a condition","context":"Assessing risk"}]'::jsonb,
+ '{"topic":"Modal Verbs for Advice and Possibility","explanation":"Use ''should'' for recommendations, ''might/could'' for possibility, and ''must'' for strong necessity when discussing diagnosis and treatment.","examples":["You should take this medication twice a day.","This might be a side effect of the treatment.","We could try a different approach.","You must avoid alcohol with this medication."]}'::jsonb,
+ '{"listening":{"script":"Based on your symptoms, this could be related to your blood pressure medication. You should schedule a follow-up in two weeks. We might need to adjust your dosage.","questions":[{"q":"What does the doctor suggest?","options":["Stop all medication","Schedule a follow-up","Go to the emergency room"],"correct":1}]},"quiz":[{"q":"You ___ take this medication with food.","options":["should","must not","couldn''t"],"correct":0},{"q":"This ___ be a side effect.","options":["should","might","must"],"correct":1}]}'::jsonb,
+ false, 25),
+
+('B2', 2, 'Passive Voice in Clinical Reports', 'Passive Voice for Objective Reporting', 'Use passive voice to write and speak about clinical procedures and reports objectively.',
+ '[{"en":"administered","definition":"Given to a patient (medication or treatment)","context":"Clinical documentation"},{"en":"documented","definition":"Recorded in writing, usually in medical notes","context":"Clinical documentation"},{"en":"referred","definition":"Sent to see another specialist or department","context":"Patient care coordination"},{"en":"discharged","definition":"Formally allowed to leave the hospital","context":"End of treatment"},{"en":"conducted","definition":"Carried out or performed (a test or procedure)","context":"Clinical procedures"}]'::jsonb,
+ '{"topic":"Passive Voice (is/was + past participle)","explanation":"Use the passive voice when the action matters more than who did it — common in clinical documentation and handovers.","examples":["The medication was administered at 8am.","Tests were conducted this morning.","The patient was referred to cardiology.","She was discharged yesterday."]}'::jsonb,
+ '{"listening":{"script":"The patient was admitted last night with chest pain. An ECG was conducted and blood tests were ordered. She was referred to cardiology for further evaluation.","questions":[{"q":"Why was the patient referred to cardiology?","options":["Routine checkup","Chest pain","A broken bone"],"correct":1}]},"quiz":[{"q":"The medication ___ administered at 8am.","options":["was","is being","has"],"correct":0},{"q":"Tests ___ conducted this morning.","options":["was","were","is"],"correct":1}]}'::jsonb,
+ false, 25),
+
+('B2', 3, 'Reported Speech: Relaying Patient Information', 'Indirect Speech for Handovers', 'Relay what a patient or colleague said using reported speech.',
+ '[{"en":"mentioned","definition":"Said something briefly, often in passing","context":"Reporting what someone said"},{"en":"complained of","definition":"Reported a symptom or problem","context":"Reporting patient symptoms"},{"en":"stated","definition":"Said clearly and directly","context":"Formal reporting"},{"en":"denied","definition":"Said that something was not true","context":"Reporting negative findings"},{"en":"according to","definition":"As stated or reported by","context":"Attributing information"}]'::jsonb,
+ '{"topic":"Reported Speech","explanation":"When relaying what someone said, shift the tense back: ''I feel dizzy'' becomes ''She said she felt dizzy''. Common reporting verbs: said, mentioned, stated, complained of, denied.","examples":["She said she felt dizzy.","He mentioned that the pain started yesterday.","The patient complained of nausea.","He denied having any allergies."]}'::jsonb,
+ '{"listening":{"script":"The patient said she had been feeling tired for two weeks. She mentioned that she also had trouble sleeping. She denied any chest pain or shortness of breath.","questions":[{"q":"What did the patient deny?","options":["Feeling tired","Trouble sleeping","Chest pain"],"correct":2}]},"quiz":[{"q":"She said she ___ dizzy. (feel)","options":["feels","felt","feeling"],"correct":1},{"q":"He ___ having any allergies.","options":["denied","denies","deny"],"correct":0}]}'::jsonb,
+ false, 25),
+
+('B2', 4, 'Checkpoint: Clinical Reporting & Modals', 'Evaluación: Modales, voz pasiva y discurso indirecto', 'Review modals, passive voice, and reported speech for clinical communication.',
+ '[]'::jsonb,
+ '{"topic":"Review","explanation":"Review of lessons 1-3","examples":[]}'::jsonb,
+ '{"is_checkpoint":true,"review_lessons":[1,2,3],"passing_score":70,"questions":[{"q":"You ___ take this medication with food.","options":["should","must not","couldn''t"],"correct":0},{"q":"The medication ___ administered at 8am.","options":["was","is being","has"],"correct":0},{"q":"She said she ___ dizzy. (feel)","options":["feels","felt","feeling"],"correct":1},{"q":"''Prognosis'' means:","options":["A type of medication","The likely outcome of a condition","A hospital department"],"correct":1},{"q":"''Discharged'' means:","options":["Admitted to hospital","Formally allowed to leave","Given medication"],"correct":1}]}'::jsonb,
+ true, 30),
+
+('B2', 5, 'Difficult Conversations: Breaking News & Handling Concerns', 'Softening Language and Empathy Phrases', 'Use softening language and empathy phrases to handle difficult conversations with patients.',
+ '[{"en":"I''m afraid...","definition":"A polite way to introduce bad or difficult news","context":"Breaking news"},{"en":"unfortunately","definition":"Used to introduce disappointing information","context":"Delivering bad news"},{"en":"I understand this is difficult","definition":"An empathy phrase acknowledging emotional impact","context":"Showing empathy"},{"en":"reassure","definition":"To say something to reduce someone''s worry","context":"Comforting a patient"},{"en":"address your concerns","definition":"To respond to and deal with someone''s worries","context":"Handling complaints"}]'::jsonb,
+ '{"topic":"Softening Language for Sensitive Topics","explanation":"Use hedging phrases and empathy statements to deliver difficult news gently: ''I''m afraid...'', ''Unfortunately...'', ''I understand this is difficult, but...''","examples":["I''m afraid the results show...","Unfortunately, we need to run more tests.","I understand this is difficult news.","Let me reassure you that we''ll take good care of you."]}'::jsonb,
+ '{"listening":{"script":"I''m afraid the test results show some abnormalities. I understand this is difficult news to hear. Let me explain what the next steps will be, and I want to reassure you that we''re here to support you.","questions":[{"q":"What is the doctor''s tone in this conversation?","options":["Angry","Empathetic and reassuring","Indifferent"],"correct":1}]},"quiz":[{"q":"''I''m afraid...'' is used to:","options":["Show fear","Introduce difficult news gently","Ask a question"],"correct":1},{"q":"''Reassure'' means to:","options":["Increase worry","Reduce someone''s worry","Ignore someone"],"correct":1}]}'::jsonb,
+ false, 25);
+
+-- C1 Lessons (English-primary, definition-style vocab like B1)
+INSERT INTO lessons (level, "order", title, subtitle, description, vocab_healthcare, grammar_point, content, is_checkpoint, duration_minutes) VALUES
+('C1', 1, 'Advanced Clinical Reasoning & Differential Diagnosis', 'Hedging Language for Clinical Uncertainty', 'Discuss differential diagnoses and clinical uncertainty using advanced hedging language.',
+ '[{"en":"differential diagnosis","definition":"A list of possible conditions that could explain a patient''s symptoms","context":"Clinical reasoning"},{"en":"presumptive","definition":"Assumed to be true based on available evidence, though not confirmed","context":"Diagnosis"},{"en":"rule out","definition":"To eliminate a possibility through testing","context":"Diagnostic process"},{"en":"inconclusive","definition":"Not leading to a definite conclusion","context":"Test results"},{"en":"warrant further investigation","definition":"To justify additional testing or examination","context":"Clinical decision-making"}]'::jsonb,
+ '{"topic":"Hedging Language for Clinical Uncertainty","explanation":"Use hedging expressions to communicate uncertainty professionally: ''This could indicate...'', ''It''s possible that...'', ''I suspect...'', ''This may warrant further investigation.''","examples":["This could indicate an underlying infection.","It''s possible that the symptoms are unrelated.","I suspect this may be a drug interaction.","These results warrant further investigation."]}'::jsonb,
+ '{"listening":{"script":"Based on the presenting symptoms, this could indicate several possibilities. It''s possible we''re dealing with an atypical presentation of pneumonia, though I can''t rule out a pulmonary embolism at this stage. The inconclusive chest X-ray certainly warrants further investigation — I''d recommend a CT angiogram to clarify.","questions":[{"q":"What does the speaker want to do next?","options":["Discharge the patient","Order a CT angiogram","Stop all tests"],"correct":1}]},"quiz":[{"q":"''Rule out'' means to:","options":["Confirm a diagnosis","Eliminate a possibility","Schedule a test"],"correct":1},{"q":"''Presumptive'' means:","options":["Confirmed with certainty","Assumed based on evidence, not confirmed","Completely unknown"],"correct":1}]}'::jsonb,
+ false, 30),
+
+('C1', 2, 'Persuasive Communication: Advocating for Patients', 'Emphatic Structures and Argumentation', 'Advocate effectively for patients using emphatic and persuasive language structures.',
+ '[{"en":"advocate for","definition":"To publicly support or argue in favor of someone''s needs","context":"Patient advocacy"},{"en":"it is imperative that","definition":"A formal way to stress something is essential","context":"Emphatic argumentation"},{"en":"compelling","definition":"Convincing or persuasive","context":"Making a case"},{"en":"undermine","definition":"To weaken or damage, often gradually","context":"Discussing risks"},{"en":"in light of","definition":"Considering or taking into account","context":"Making a case based on evidence"}]'::jsonb,
+ '{"topic":"Emphatic Structures for Advocacy","explanation":"Use emphatic structures to make a persuasive case: ''It is imperative that...'', ''What concerns me most is...'', ''In light of these findings, I strongly recommend...''","examples":["It is imperative that we address this immediately.","What concerns me most is the delay in treatment.","In light of these findings, I strongly recommend a specialist referral.","This is a compelling case for immediate action."]}'::jsonb,
+ '{"listening":{"script":"It is imperative that we escalate this case. What concerns me most is that the patient''s condition has been deteriorating for hours without adequate intervention. In light of these findings, I strongly recommend an immediate consultation with the on-call specialist.","questions":[{"q":"What is the speaker''s main concern?","options":["Paperwork delays","The patient''s deteriorating condition","Staff scheduling"],"correct":1}]},"quiz":[{"q":"''It is imperative that'' expresses:","options":["A suggestion","Something essential/urgent","A minor preference"],"correct":1},{"q":"''Advocate for'' means to:","options":["Argue against someone","Support someone''s needs","Ignore a situation"],"correct":1}]}'::jsonb,
+ false, 30),
+
+('C1', 3, 'Idiomatic & Professional Register', 'Register Switching in Clinical Settings', 'Recognize and use appropriate professional register, adjusting tone between colleagues and patients.',
+ '[{"en":"on the mend","definition":"Recovering well (informal, used with patients/families)","context":"Informal patient update"},{"en":"stable but guarded","definition":"A formal clinical phrase meaning stable but with some risk of decline","context":"Formal clinical register"},{"en":"a rocky recovery","definition":"A recovery with complications or setbacks (informal)","context":"Informal patient update"},{"en":"touch and go","definition":"A critical, uncertain situation (informal idiom)","context":"Informal discussion among colleagues"},{"en":"register","definition":"The level of formality used in language depending on context","context":"Professional communication"}]'::jsonb,
+ '{"topic":"Register Switching","explanation":"Professional healthcare English requires switching between formal register (with colleagues, in documentation) and warmer, informal register (with patients and families) — both convey the same information differently.","examples":["Formal: ''The patient''s condition is stable but guarded.'' Informal: ''She''s doing okay, but we''re keeping a close eye on her.''","Formal: ''Recovery has been complicated by post-operative infection.'' Informal: ''It''s been a bit of a rocky recovery.''"]}'::jsonb,
+ '{"listening":{"script":"To the family: Good news — he''s on the mend and should be home by the weekend. To a colleague: It was touch and go for the first 48 hours, but he''s stabilized now.","questions":[{"q":"Which phrase is used with the colleague, not the family?","options":["On the mend","Touch and go","Home by the weekend"],"correct":1}]},"quiz":[{"q":"''On the mend'' is an example of:","options":["Formal clinical register","Informal, warm register","Technical jargon"],"correct":1},{"q":"''Touch and go'' means:","options":["A routine situation","A critical, uncertain situation","A scheduled appointment"],"correct":1}]}'::jsonb,
+ false, 30),
+
+('C1', 4, 'Checkpoint: Advanced Clinical Communication', 'Evaluación: Razonamiento clínico, persuasión y registro', 'Review hedging language, emphatic structures, and professional register.',
+ '[]'::jsonb,
+ '{"topic":"Review","explanation":"Review of lessons 1-3","examples":[]}'::jsonb,
+ '{"is_checkpoint":true,"review_lessons":[1,2,3],"passing_score":75,"questions":[{"q":"''Rule out'' means to:","options":["Confirm a diagnosis","Eliminate a possibility","Schedule a test"],"correct":1},{"q":"''It is imperative that'' expresses:","options":["A suggestion","Something essential/urgent","A minor preference"],"correct":1},{"q":"''Touch and go'' means:","options":["A routine situation","A critical, uncertain situation","A scheduled appointment"],"correct":1},{"q":"''Presumptive'' means:","options":["Confirmed with certainty","Assumed based on evidence, not confirmed","Completely unknown"],"correct":1},{"q":"''Advocate for'' means to:","options":["Argue against someone","Support someone''s needs","Ignore a situation"],"correct":1}]}'::jsonb,
+ true, 35),
+
+('C1', 5, 'Cross-Cultural Communication & Ethical Discussions', 'Diplomatic Disagreement and Ethical Nuance', 'Navigate disagreement and ethical discussions diplomatically in a multicultural healthcare setting.',
+ '[{"en":"with all due respect","definition":"A polite phrase used to introduce respectful disagreement","context":"Diplomatic disagreement"},{"en":"I see your point, but","definition":"A phrase acknowledging another view before disagreeing","context":"Diplomatic disagreement"},{"en":"cultural sensitivity","definition":"Awareness and respect for cultural differences in care","context":"Cross-cultural care"},{"en":"informed consent","definition":"A patient''s agreement to treatment based on full understanding of risks","context":"Medical ethics"},{"en":"autonomy","definition":"A patient''s right to make their own healthcare decisions","context":"Medical ethics"}]'::jsonb,
+ '{"topic":"Diplomatic Language for Disagreement","explanation":"Use softened disagreement structures to maintain professionalism: ''I see your point, but...'', ''With all due respect, I would suggest...'', ''While I understand your perspective, I''m concerned that...''","examples":["I see your point, but I think we should consider the family''s wishes.","With all due respect, I''d like to propose an alternative approach.","While I understand your perspective, patient autonomy is a key concern here.","I hear what you''re saying, but I have some reservations."]}'::jsonb,
+ '{"listening":{"script":"I see your point about the treatment timeline, but with all due respect, I think we need to prioritize the patient''s informed consent here. While I understand your perspective, respecting her autonomy is essential given her cultural background and personal wishes.","questions":[{"q":"What is the main ethical concern discussed?","options":["Cost of treatment","Patient autonomy and informed consent","Hospital scheduling"],"correct":1}]},"quiz":[{"q":"''With all due respect'' is used to:","options":["Insult someone","Introduce respectful disagreement","End a conversation"],"correct":1},{"q":"''Autonomy'' refers to:","options":["A patient''s right to decide","A hospital policy","A type of medication"],"correct":0}]}'::jsonb,
  false, 30);
 
 -- ============================================================

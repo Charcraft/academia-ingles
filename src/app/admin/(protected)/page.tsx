@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users,
   Activity,
-  Wifi,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -14,264 +13,21 @@ import {
   CheckCircle,
   Clock,
   Zap,
+  Loader2,
 } from "lucide-react";
 import { cn, timeAgo, getProfessionIcon } from "@/lib/utils";
 import { countries } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
 import type { StudentWithProfile } from "@/types";
 
-// ── Mock Data ─────────────────────────────────────────────────────────────────
-
-const mockStudents: StudentWithProfile[] = [
-  {
-    id: "1",
-    first_name: "Maria",
-    last_name: "Garcia",
-    email: "maria@example.com",
-    country: "Mexico",
-    country_code: "MX",
-    phone: "+521234567890",
-    profession: "Enfermera",
-    license_number: "ENF-12345",
-    experience_years: 5,
-    exam_interest: "ielts_academic",
-    current_level: "A2",
-    global_progress: 35,
-    daily_goal: 30,
-    daily_minutes_today: 15,
-    role: "student",
-    validation_status: "pending",
-    validation_photo_url: null,
-    validation_approved_at: null,
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 12,
-    last_active_date: new Date().toISOString(),
-    total_xp: 1250,
-    exam_path: "ielts_academic",
-    is_blocked: false,
-    created_at: "2026-01-15T00:00:00Z",
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    first_name: "Carlos",
-    last_name: "Lopez",
-    email: "carlos@example.com",
-    country: "Colombia",
-    country_code: "CO",
-    phone: "+573001234567",
-    profession: "Enfermero",
-    license_number: "ENF-67890",
-    experience_years: 3,
-    exam_interest: "toefl_ibt",
-    current_level: "B1",
-    global_progress: 62,
-    daily_goal: 45,
-    daily_minutes_today: 40,
-    role: "student",
-    validation_status: "approved",
-    validation_photo_url: null,
-    validation_approved_at: "2026-02-10T00:00:00Z",
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 28,
-    last_active_date: new Date().toISOString(),
-    total_xp: 4800,
-    exam_path: "toefl_ibt",
-    is_blocked: false,
-    created_at: "2026-01-20T00:00:00Z",
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    first_name: "Juan",
-    last_name: "Dela Cruz",
-    email: "juan@example.com",
-    country: "Philippines",
-    country_code: "PH",
-    phone: "+639123456789",
-    profession: "Fisioterapeuta",
-    license_number: "FIS-11111",
-    experience_years: 2,
-    exam_interest: "undecided",
-    current_level: "A0",
-    global_progress: 8,
-    daily_goal: 20,
-    daily_minutes_today: 0,
-    role: "student",
-    validation_status: "pending",
-    validation_photo_url: null,
-    validation_approved_at: null,
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 0,
-    last_active_date: new Date(
-      Date.now() - 8 * 86400000
-    ).toISOString(),
-    total_xp: 120,
-    exam_path: null,
-    is_blocked: false,
-    created_at: "2026-06-01T00:00:00Z",
-    updated_at: new Date(Date.now() - 8 * 86400000).toISOString(),
-  },
-  {
-    id: "4",
-    first_name: "Ana",
-    last_name: "Martinez",
-    email: "ana@example.com",
-    country: "Spain",
-    country_code: "ES",
-    phone: "+34600123456",
-    profession: "Doctora",
-    license_number: "DOC-22222",
-    experience_years: 8,
-    exam_interest: "pte_academic",
-    current_level: "B2",
-    global_progress: 88,
-    daily_goal: 60,
-    daily_minutes_today: 55,
-    role: "student",
-    validation_status: "approved",
-    validation_photo_url: null,
-    validation_approved_at: "2026-01-25T00:00:00Z",
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 45,
-    last_active_date: new Date().toISOString(),
-    total_xp: 12500,
-    exam_path: "pte_academic",
-    is_blocked: false,
-    created_at: "2025-12-01T00:00:00Z",
-    updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.0,
-  },
-  {
-    id: "5",
-    first_name: "Luis",
-    last_name: "Torres",
-    email: "luis@example.com",
-    country: "Peru",
-    country_code: "PE",
-    phone: "+51987654321",
-    profession: "Param\u00e9dico",
-    license_number: "PAR-33333",
-    experience_years: 4,
-    exam_interest: "ielts_academic",
-    current_level: "A1",
-    global_progress: 45,
-    daily_goal: 30,
-    daily_minutes_today: 20,
-    role: "student",
-    validation_status: "rejected",
-    validation_photo_url: null,
-    validation_approved_at: null,
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 5,
-    last_active_date: new Date(
-      Date.now() - 1 * 86400000
-    ).toISOString(),
-    total_xp: 890,
-    exam_path: "ielts_academic",
-    is_blocked: true,
-    created_at: "2026-03-15T00:00:00Z",
-    updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-  },
-  {
-    id: "6",
-    first_name: "Sofia",
-    last_name: "Ramirez",
-    email: "sofia@example.com",
-    country: "Chile",
-    country_code: "CL",
-    phone: "+56212345678",
-    profession: "Enfermera",
-    license_number: "ENF-44444",
-    experience_years: 6,
-    exam_interest: "ielts_academic",
-    current_level: "B1",
-    global_progress: 91,
-    daily_goal: 45,
-    daily_minutes_today: 50,
-    role: "student",
-    validation_status: "approved",
-    validation_photo_url: null,
-    validation_approved_at: "2026-03-01T00:00:00Z",
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 18,
-    last_active_date: new Date().toISOString(),
-    total_xp: 9800,
-    exam_path: "ielts_academic",
-    is_blocked: false,
-    created_at: "2026-02-01T00:00:00Z",
-    updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.5,
-  },
-  {
-    id: "7",
-    first_name: "Pedro",
-    last_name: "Silva",
-    email: "pedro@example.com",
-    country: "Brazil",
-    country_code: "BR",
-    phone: "+5511998765432",
-    profession: "Odont\u00f3logo",
-    license_number: "ODO-55555",
-    experience_years: 10,
-    exam_interest: "toefl_ibt",
-    current_level: "C1",
-    global_progress: 72,
-    daily_goal: 60,
-    daily_minutes_today: 45,
-    role: "student",
-    validation_status: "approved",
-    validation_photo_url: null,
-    validation_approved_at: "2026-04-10T00:00:00Z",
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 33,
-    last_active_date: new Date().toISOString(),
-    total_xp: 15200,
-    exam_path: "toefl_ibt",
-    is_blocked: false,
-    created_at: "2025-11-15T00:00:00Z",
-    updated_at: new Date().toISOString(),
-    speaking_score_avg: 8.0,
-  },
-  {
-    id: "8",
-    first_name: "Elena",
-    last_name: "Diaz",
-    email: "elena@example.com",
-    country: "Argentina",
-    country_code: "AR",
-    phone: "+541123456789",
-    profession: "Psic\u00f3loga",
-    license_number: "PSI-66666",
-    experience_years: 7,
-    exam_interest: "pte_academic",
-    current_level: "A2",
-    global_progress: 19,
-    daily_goal: 30,
-    daily_minutes_today: 0,
-    role: "student",
-    validation_status: "pending",
-    validation_photo_url: null,
-    validation_approved_at: null,
-    validation_photo_delete_at: null,
-    avatar_url: null,
-    streak: 0,
-    last_active_date: new Date(
-      Date.now() - 10 * 86400000
-    ).toISOString(),
-    total_xp: 200,
-    exam_path: null,
-    is_blocked: false,
-    created_at: "2026-05-20T00:00:00Z",
-    updated_at: new Date(Date.now() - 10 * 86400000).toISOString(),
-  },
-];
+interface ActivityItem {
+  id: string;
+  user: string;
+  lesson: string;
+  level: string;
+  time: string;
+  score: number | null;
+}
 
 // ── Utility: get country flag ────────────────────────────────────────────────
 
@@ -405,12 +161,9 @@ function getAlertStudents(all: StudentWithProfile[], type: AlertTab): StudentWit
         return new Date(s.last_active_date).getTime() < sevenDaysAgo;
       });
     case "streak_drop":
-      // Mock: students with streak < 5 and previously had more
       return all.filter((s) => s.streak >= 1 && s.streak <= 5);
     case "exam_ready":
-      return all.filter(
-        (s) => s.global_progress > 85 && (s as any).speaking_score_avg > 6.5
-      );
+      return all.filter((s) => s.global_progress > 85);
     case "high_potential":
       return all.filter(
         (s) =>
@@ -422,33 +175,57 @@ function getAlertStudents(all: StudentWithProfile[], type: AlertTab): StudentWit
   }
 }
 
-// ── Activity Feed ────────────────────────────────────────────────────────────
-
-const mockActivity = [
-  { id: "a1", user: "Maria Garcia", action: "completed", lesson: "Medical Vocabulary - Symptoms", level: "A2", time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), score: 85 },
-  { id: "a2", user: "Carlos Lopez", action: "completed", lesson: "Grammar - Past Tenses", level: "B1", time: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), score: 92 },
-  { id: "a3", user: "Ana Martinez", action: "submitted", lesson: "Speaking Recording", level: "B2", time: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), score: null },
-  { id: "a4", user: "Pedro Silva", action: "completed", lesson: "Checkpoint 4", level: "C1", time: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), score: 78 },
-  { id: "a5", user: "Sofia Ramirez", action: "completed", lesson: "Listening - Hospital Scenarios", level: "B1", time: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), score: 90 },
-  { id: "a6", user: "Maria Garcia", action: "completed", lesson: "Reading Comprehension", level: "A2", time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), score: 88 },
-  { id: "a7", user: "Luis Torres", action: "completed", lesson: "Basic Greetings", level: "A1", time: new Date(Date.now() - 28 * 60 * 60 * 1000).toISOString(), score: 65 },
-  { id: "a8", user: "Carlos Lopez", action: "completed", lesson: "Medical Ethics Discussion", level: "B1", time: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString(), score: 95 },
-];
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminDashboardPage() {
-  const [students, _setStudents] = useState<StudentWithProfile[]>(mockStudents);
+  const [students, setStudents] = useState<StudentWithProfile[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeAlertTab, setActiveAlertTab] = useState<AlertTab>("inactive");
   const [stats, setStats] = useState({
     total: 0,
     activeToday: 0,
-    onlineNow: 0,
     avgProgress: 0,
   });
 
+  const loadDashboard = useCallback(async () => {
+    const supabase = createClient();
+
+    const { data: studentsData } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("role", "student");
+
+    const { data: progressData } = await supabase
+      .from("user_progress")
+      .select("id, score, completed_at, profiles(first_name, last_name), lessons(title, level)")
+      .eq("completed", true)
+      .order("completed_at", { ascending: false })
+      .limit(8);
+
+    setStudents((studentsData ?? []) as unknown as StudentWithProfile[]);
+
+    setActivity(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((progressData ?? []) as any[]).map((p) => ({
+        id: p.id,
+        user: p.profiles ? `${p.profiles.first_name} ${p.profiles.last_name}` : "Unknown student",
+        lesson: p.lessons?.title ?? "Lesson",
+        level: p.lessons?.level ?? "",
+        time: p.completed_at,
+        score: p.score,
+      }))
+    );
+
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    // Calculate stats from mock data
+    loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
     const today = new Date().toISOString().slice(0, 10);
     setStats({
       total: students.length,
@@ -456,10 +233,12 @@ export default function AdminDashboardPage() {
         if (!s.last_active_date) return false;
         return s.last_active_date.slice(0, 10) === today;
       }).length,
-      onlineNow: 3, // Mock: 3 users currently online
-      avgProgress: Math.round(
-        students.reduce((sum, s) => sum + s.global_progress, 0) / students.length
-      ),
+      avgProgress:
+        students.length === 0
+          ? 0
+          : Math.round(
+              students.reduce((sum, s) => sum + s.global_progress, 0) / students.length
+            ),
     });
   }, [students]);
 
@@ -467,6 +246,14 @@ export default function AdminDashboardPage() {
     () => getAlertStudents(students, activeAlertTab),
     [students, activeAlertTab]
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -479,33 +266,24 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Stats Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatsCard
           icon={Users}
           label="Total Students"
           value={stats.total}
-          trend={12}
           colorClass="bg-teal-500/10 text-teal-400"
         />
         <StatsCard
           icon={Activity}
           label="Active Today"
           value={stats.activeToday}
-          trend={5}
           colorClass="bg-blue-500/10 text-blue-400"
-        />
-        <StatsCard
-          icon={Wifi}
-          label="Online Now"
-          value={stats.onlineNow}
-          colorClass="bg-success/10 text-success"
         />
         <StatsCard
           icon={Zap}
           label="Avg. Progress"
           value={stats.avgProgress}
           suffix="%"
-          trend={3}
           colorClass="bg-purple-500/10 text-purple-400"
         />
       </div>
@@ -617,45 +395,51 @@ export default function AdminDashboardPage() {
           Recent Activity
         </h2>
         <div className="bg-charcoal-950 border border-charcoal-700 rounded-2xl divide-y divide-charcoal-800">
-          {mockActivity.map((act, i) => (
-            <motion.div
-              key={act.id}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.3 }}
-              className="flex items-center gap-4 px-5 py-3 hover:bg-charcoal-800/50 transition-colors"
-            >
-              <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-400 shrink-0">
-                <Zap className="w-4 h-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-200">
-                  <span className="font-medium">{act.user}</span>{" "}
-                  <span className="text-slate-400">{act.action}</span>{" "}
-                  <span className="text-teal-400">{act.lesson}</span>
-                </p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Level {act.level} · {timeAgo(act.time)}
-                </p>
-              </div>
-              {act.score !== null && (
-                <div className="text-right">
-                  <span
-                    className={cn(
-                      "text-sm font-semibold tabular-nums",
-                      act.score >= 80
-                        ? "text-success"
-                        : act.score >= 60
-                        ? "text-warning"
-                        : "text-danger"
-                    )}
-                  >
-                    {act.score}%
-                  </span>
+          {activity.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-500">
+              No completed lessons yet.
+            </div>
+          ) : (
+            activity.map((act, i) => (
+              <motion.div
+                key={act.id}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05, duration: 0.3 }}
+                className="flex items-center gap-4 px-5 py-3 hover:bg-charcoal-800/50 transition-colors"
+              >
+                <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-400 shrink-0">
+                  <Zap className="w-4 h-4" />
                 </div>
-              )}
-            </motion.div>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-200">
+                    <span className="font-medium">{act.user}</span>{" "}
+                    <span className="text-slate-400">completed</span>{" "}
+                    <span className="text-teal-400">{act.lesson}</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Level {act.level} · {timeAgo(act.time)}
+                  </p>
+                </div>
+                {act.score !== null && (
+                  <div className="text-right">
+                    <span
+                      className={cn(
+                        "text-sm font-semibold tabular-nums",
+                        act.score >= 80
+                          ? "text-success"
+                          : act.score >= 60
+                          ? "text-warning"
+                          : "text-danger"
+                      )}
+                    >
+                      {act.score}%
+                    </span>
+                  </div>
+                )}
+              </motion.div>
+            ))
+          )}
         </div>
       </section>
     </div>

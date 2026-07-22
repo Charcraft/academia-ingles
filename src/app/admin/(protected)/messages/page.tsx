@@ -1,95 +1,12 @@
 "use client";
 
-import { Suspense, useState, useRef, useEffect, useMemo } from "react";
+import { Suspense, useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Send, ChevronLeft, MessageSquare } from "lucide-react";
+import { Search, Send, ChevronLeft, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import type { Message, StudentWithProfile } from "@/types";
-
-// ── Mock Students (for left panel) ───────────────────────────────────────────
-
-const mockStudents: StudentWithProfile[] = [
-  {
-    id: "1", first_name: "Maria", last_name: "Garcia", email: "maria@example.com",
-    country: "Mexico", country_code: "MX", phone: "+521234567890",
-    profession: "Enfermera", license_number: "ENF-12345", experience_years: 5,
-    exam_interest: "ielts_academic", current_level: "A2", global_progress: 35,
-    daily_goal: 30, daily_minutes_today: 15, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 12,
-    last_active_date: new Date().toISOString(), total_xp: 1250,
-    exam_path: "ielts_academic", is_blocked: false,
-    created_at: "2026-01-15T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 5.5,
-  },
-  {
-    id: "2", first_name: "Carlos", last_name: "Lopez", email: "carlos@example.com",
-    country: "Colombia", country_code: "CO", phone: "+573001234567",
-    profession: "Enfermero", license_number: "ENF-67890", experience_years: 3,
-    exam_interest: "toefl_ibt", current_level: "B1", global_progress: 62,
-    daily_goal: 45, daily_minutes_today: 40, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 28,
-    last_active_date: new Date().toISOString(), total_xp: 4800,
-    exam_path: "toefl_ibt", is_blocked: false,
-    created_at: "2026-01-20T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 6.5,
-  },
-  {
-    id: "3", first_name: "Juan", last_name: "Dela Cruz", email: "juan@example.com",
-    country: "Philippines", country_code: "PH", phone: "+639123456789",
-    profession: "Fisioterapeuta", license_number: "FIS-11111", experience_years: 2,
-    exam_interest: "undecided", current_level: "A0", global_progress: 8,
-    daily_goal: 20, daily_minutes_today: 0, role: "student",
-    validation_status: "pending", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 0,
-    last_active_date: new Date(Date.now() - 8 * 86400000).toISOString(), total_xp: 120,
-    exam_path: null, is_blocked: false,
-    created_at: "2026-06-01T00:00:00Z", updated_at: new Date(Date.now() - 8 * 86400000).toISOString(),
-    speaking_score_avg: 4.0,
-  },
-  {
-    id: "6", first_name: "Sofia", last_name: "Ramirez", email: "sofia@example.com",
-    country: "Chile", country_code: "CL", phone: "+56212345678",
-    profession: "Enfermera", license_number: "ENF-44444", experience_years: 6,
-    exam_interest: "ielts_academic", current_level: "B1", global_progress: 91,
-    daily_goal: 45, daily_minutes_today: 50, role: "student",
-    validation_status: "approved", validation_photo_url: null,
-    validation_approved_at: null, validation_photo_delete_at: null,
-    avatar_url: null, streak: 18,
-    last_active_date: new Date().toISOString(), total_xp: 9800,
-    exam_path: "ielts_academic", is_blocked: false,
-    created_at: "2026-02-01T00:00:00Z", updated_at: new Date().toISOString(),
-    speaking_score_avg: 7.5,
-  },
-];
-
-// ── Mock Messages ────────────────────────────────────────────────────────────
-
-const mockMessages: Record<string, Message[]> = {
-  "1": [
-    { id: "m1", sender_id: "1", receiver_id: "admin", content: "Hola! Tengo una duda sobre la lección de vocabulario.", is_read: true, created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
-    { id: "m2", sender_id: "admin", receiver_id: "1", content: "Claro Maria, ¿en qué puedo ayudarte?", is_read: true, created_at: new Date(Date.now() - 55 * 60 * 1000).toISOString() },
-    { id: "m3", sender_id: "1", receiver_id: "admin", content: "No entiendo bien la diferencia entre 'pain' y 'ache'.", is_read: true, created_at: new Date(Date.now() - 50 * 60 * 1000).toISOString() },
-    { id: "m4", sender_id: "admin", receiver_id: "1", content: "'Pain' es más general, 'ache' es un dolor continuo y sordo. Por ejemplo: 'I have a headache' (dolor de cabeza) vs 'I feel pain in my arm'.", is_read: false, created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString() },
-  ],
-  "2": [
-    { id: "m5", sender_id: "2", receiver_id: "admin", content: "Good morning! I just finished the B1 checkpoint test.", is_read: true, created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-    { id: "m6", sender_id: "admin", receiver_id: "2", content: "Great job Carlos! How did you feel about it?", is_read: true, created_at: new Date(Date.now() - 100 * 60 * 1000).toISOString() },
-    { id: "m7", sender_id: "2", receiver_id: "admin", content: "It was challenging but I think I did well. The listening section was the hardest.", is_read: true, created_at: new Date(Date.now() - 90 * 60 * 1000).toISOString() },
-  ],
-  "3": [
-    { id: "m8", sender_id: "admin", receiver_id: "3", content: "Hi Juan, I noticed you haven't logged in for a few days. Everything okay?", is_read: false, created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-  ],
-  "6": [
-    { id: "m9", sender_id: "6", receiver_id: "admin", content: "¡Hola! Quería preguntar sobre el examen mock de IELTS.", is_read: true, created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() },
-    { id: "m10", sender_id: "admin", receiver_id: "6", content: "Hola Sofia! El mock está disponible en la sección de práctica. Te recomiendo hacerlo este fin de semana.", is_read: true, created_at: new Date(Date.now() - 2.5 * 60 * 60 * 1000).toISOString() },
-  ],
-};
 
 // ── Main Page (inner, uses searchParams) ──────────────────────────────────────
 
@@ -97,14 +14,65 @@ function MessagesContent() {
   const searchParams = useSearchParams();
   const preselectedId = searchParams.get("student");
 
-  const [students] = useState(mockStudents);
+  const [adminId, setAdminId] = useState<string | null>(null);
+  const [students, setStudents] = useState<StudentWithProfile[]>([]);
+  const [allMessages, setAllMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     preselectedId || null
   );
-  const [conversations, setConversations] = useState(mockMessages);
   const [newMessage, setNewMessage] = useState("");
+  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const loadData = useCallback(async () => {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    setAdminId(user.id);
+
+    const { data: studentsData } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("role", "student");
+    setStudents((studentsData ?? []) as unknown as StudentWithProfile[]);
+
+    const { data: messagesData } = await supabase
+      .from("messages")
+      .select("*")
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .order("created_at", { ascending: true });
+    setAllMessages((messagesData ?? []) as unknown as Message[]);
+
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Realtime: new messages involving this admin
+  useEffect(() => {
+    if (!adminId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel("admin-messages")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${adminId}` },
+        (payload) => {
+          setAllMessages((prev) => [...prev, payload.new as Message]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [adminId]);
 
   // Update preselected when search params change
   useEffect(() => {
@@ -116,7 +84,41 @@ function MessagesContent() {
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversations, selectedStudentId]);
+  }, [allMessages, selectedStudentId]);
+
+  // Mark incoming messages from the selected student as read
+  useEffect(() => {
+    if (!selectedStudentId || !adminId) return;
+    const unread = allMessages.filter(
+      (m) => m.sender_id === selectedStudentId && m.receiver_id === adminId && !m.is_read
+    );
+    if (unread.length === 0) return;
+
+    const supabase = createClient();
+    const ids = unread.map((m) => m.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("messages")
+      .update({ is_read: true })
+      .in("id", ids)
+      .then(() => {
+        setAllMessages((prev) =>
+          prev.map((m) => (ids.includes(m.id) ? { ...m, is_read: true } : m))
+        );
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStudentId, adminId, allMessages.length]);
+
+  const conversations = useMemo(() => {
+    if (!adminId) return {} as Record<string, Message[]>;
+    const map: Record<string, Message[]> = {};
+    for (const m of allMessages) {
+      const otherParty = m.sender_id === adminId ? m.receiver_id : m.sender_id;
+      if (!map[otherParty]) map[otherParty] = [];
+      map[otherParty].push(m);
+    }
+    return map;
+  }, [allMessages, adminId]);
 
   const filteredStudents = useMemo(() => {
     if (!searchQuery) return students;
@@ -130,16 +132,11 @@ function MessagesContent() {
   }, [students, searchQuery]);
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
-  const currentMessages = selectedStudentId
-    ? conversations[selectedStudentId] || []
-    : [];
+  const currentMessages = selectedStudentId ? conversations[selectedStudentId] || [] : [];
 
-  // Count unread per student
   function unreadCount(studentId: string): number {
     const msgs = conversations[studentId] || [];
-    return msgs.filter(
-      (m) => m.sender_id === studentId && !m.is_read
-    ).length;
+    return msgs.filter((m) => m.sender_id === studentId && !m.is_read).length;
   }
 
   function getLastMessage(studentId: string): Message | null {
@@ -150,36 +147,37 @@ function MessagesContent() {
   function formatMessageTime(date: string): string {
     const msgDate = new Date(date);
     const now = new Date();
-    const diffDays = Math.floor(
-      (now.getTime() - msgDate.getTime()) / 86400000
-    );
+    const diffDays = Math.floor((now.getTime() - msgDate.getTime()) / 86400000);
     if (diffDays === 0) {
-      return msgDate.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      return msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
     if (diffDays < 7) return `${diffDays}d ago`;
     return msgDate.toLocaleDateString();
   }
 
-  function handleSend() {
-    if (!newMessage.trim() || !selectedStudentId) return;
-
-    const msg: Message = {
-      id: `m-${Date.now()}`,
-      sender_id: "admin",
-      receiver_id: selectedStudentId,
-      content: newMessage.trim(),
-      is_read: true,
-      created_at: new Date().toISOString(),
-    };
-
-    setConversations((prev) => ({
-      ...prev,
-      [selectedStudentId]: [...(prev[selectedStudentId] || []), msg],
-    }));
+  async function handleSend() {
+    if (!newMessage.trim() || !selectedStudentId || !adminId) return;
+    setSending(true);
+    const content = newMessage.trim();
     setNewMessage("");
+
+    const supabase = createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
+      .from("messages")
+      .insert({
+        sender_id: adminId,
+        receiver_id: selectedStudentId,
+        content,
+        is_read: false,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setAllMessages((prev) => [...prev, data as unknown as Message]);
+    }
+    setSending(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -187,6 +185,14 @@ function MessagesContent() {
       e.preventDefault();
       handleSend();
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="h-[calc(100vh-7rem)] flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+      </div>
+    );
   }
 
   return (
@@ -213,9 +219,6 @@ function MessagesContent() {
               className="w-full pl-10 pr-4 py-2 bg-charcoal-900 border border-charcoal-700 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500/50 transition-all"
             />
           </div>
-          <p className="text-xs text-slate-500 mt-2">
-            Supabase Realtime subscription ready
-          </p>
         </div>
 
         {/* Student List */}
@@ -270,7 +273,7 @@ function MessagesContent() {
                             : "text-slate-500"
                         )}
                       >
-                        {lastMsg.sender_id === "admin" ? "You: " : ""}
+                        {lastMsg.sender_id === adminId ? "You: " : ""}
                         {lastMsg.content}
                       </p>
                     )}
@@ -303,7 +306,7 @@ function MessagesContent() {
           !selectedStudentId && "hidden md:flex md:items-center md:justify-center"
         )}
       >
-        {!selectedStudentId ? (
+        {!selectedStudentId || !selectedStudent ? (
           <div className="text-center p-8">
             <MessageSquare className="w-12 h-12 text-slate-600 mx-auto mb-3" />
             <p className="text-slate-400 text-lg font-medium">
@@ -324,31 +327,33 @@ function MessagesContent() {
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <div className="w-9 h-9 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 text-xs font-bold uppercase shrink-0">
-                {selectedStudent!.first_name[0]}
-                {selectedStudent!.last_name[0]}
+                {selectedStudent.first_name[0]}
+                {selectedStudent.last_name[0]}
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-200">
-                  {selectedStudent!.first_name} {selectedStudent!.last_name}
+                  {selectedStudent.first_name} {selectedStudent.last_name}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {selectedStudent!.current_level} ·{" "}
-                  {selectedStudent!.profession}
+                  {selectedStudent.current_level} · {selectedStudent.profession}
                 </p>
               </div>
             </div>
 
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {currentMessages.length === 0 && (
+                <p className="text-center text-sm text-slate-500 pt-8">
+                  No messages yet. Say hello!
+                </p>
+              )}
               <AnimatePresence>
                 {currentMessages.map((msg, i) => {
-                  const isAdmin = msg.sender_id === "admin";
+                  const isAdmin = msg.sender_id === adminId;
                   const showTimestamp =
                     i === 0 ||
                     new Date(msg.created_at).getTime() -
-                      new Date(
-                        currentMessages[i - 1].created_at
-                      ).getTime() >
+                      new Date(currentMessages[i - 1].created_at).getTime() >
                       30 * 60 * 1000;
 
                   return (
@@ -399,11 +404,12 @@ function MessagesContent() {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  className="flex-1 px-4 py-2.5 bg-charcoal-900 border border-charcoal-700 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500/50 transition-all"
+                  disabled={sending}
+                  className="flex-1 px-4 py-2.5 bg-charcoal-900 border border-charcoal-700 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500/50 transition-all disabled:opacity-60"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!newMessage.trim()}
+                  disabled={!newMessage.trim() || sending}
                   className="p-2.5 rounded-xl bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <Send className="w-4 h-4" />

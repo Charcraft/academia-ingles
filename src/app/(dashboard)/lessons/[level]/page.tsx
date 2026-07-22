@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -8,8 +9,10 @@ import {
   Star,
   Clock,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 import { cn, formatMinutes } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import type { Lesson } from "@/types";
 
 // ─── Mock Data ──────────────────────────────────────────────────
@@ -350,6 +353,394 @@ const A0_LESSONS: Lesson[] = [
           options: ["fever", "headache", "cough"],
           correct: 1,
         },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+];
+
+const A1_LESSONS: Lesson[] = [
+  {
+    id: "a1-meeting-patient",
+    level: "A1",
+    order: 1,
+    title: "Meeting the Patient",
+    subtitle: "Preguntas básicas al paciente",
+    description:
+      "Learn to ask basic questions when meeting a new patient. Aprende a hacer preguntas básicas al conocer a un nuevo paciente.",
+    vocab_healthcare: [
+      { en: "What's your name?", es: "¿Cómo te llamas?", context: "Patient intake", definition: "" },
+      { en: "How old are you?", es: "¿Cuántos años tienes?", context: "Patient intake", definition: "" },
+      { en: "Where are you from?", es: "¿De dónde eres?", context: "Getting to know the patient", definition: "" },
+      { en: "date of birth", es: "fecha de nacimiento", context: "Registration form", definition: "" },
+      { en: "occupation", es: "ocupación", context: "Patient profile", definition: "" },
+    ],
+    grammar_point: {
+      topic: "Present Simple - WH Questions",
+      explanation:
+        "Use What, How, Where + is/do/does to ask about facts. Usa What, How, Where + is/do/does para preguntar datos.",
+      examples: ["What's your name?", "How old are you?", "Where do you live?", "What's your occupation?"],
+    },
+    content: {
+      listening: {
+        script:
+          "Good morning. Can I ask you a few questions? What's your name, please? And how old are you? Where are you from originally?",
+        questions: [
+          { q: "What is the nurse asking about?", options: ["Symptoms", "Personal information", "Medication"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "___ is your name?", options: ["What", "Where", "How"], correct: 0 },
+        { q: "___ old are you?", options: ["What", "How", "Where"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+  {
+    id: "a1-ward-routine",
+    level: "A1",
+    order: 2,
+    title: "Daily Ward Routine",
+    subtitle: "Present Simple para rutinas",
+    description:
+      "Talk about daily hospital routines and schedules. Habla sobre las rutinas y horarios diarios del hospital.",
+    vocab_healthcare: [
+      { en: "wake up", es: "despertarse", context: "Morning routine", definition: "" },
+      { en: "check vitals", es: "revisar signos vitales", context: "Nursing routine", definition: "" },
+      { en: "shift", es: "turno", context: "Work schedule", definition: "" },
+      { en: "every morning", es: "cada mañana", context: "Frequency", definition: "" },
+      { en: "medication round", es: "ronda de medicamentos", context: "Ward routine", definition: "" },
+    ],
+    grammar_point: {
+      topic: "Present Simple for Routines",
+      explanation:
+        "Use Present Simple (+s for he/she/it) to talk about habits and routines. Usa el presente simple (+s para he/she/it) para hablar de hábitos y rutinas.",
+      examples: [
+        "The nurse checks vitals every morning.",
+        "I start my shift at 7am.",
+        "Patients wake up at 6am.",
+        "We do medication rounds twice a day.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "My shift starts at seven in the morning. First, I check the patients' vital signs. Then, at eight, we do the medication round. Lunch is at noon.",
+        questions: [
+          { q: "What time does the shift start?", options: ["6am", "7am", "8am"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "The nurse ___ vitals every morning.", options: ["check", "checks", "checking"], correct: 1 },
+        { q: "I ___ my shift at 7am.", options: ["start", "starts", "starting"], correct: 0 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+  {
+    id: "a1-family-contact",
+    level: "A1",
+    order: 3,
+    title: "Family & Emergency Contact",
+    subtitle: "Posesivos y vocabulario familiar",
+    description:
+      "Ask about a patient's family and emergency contact information. Pregunta sobre la familia del paciente y su contacto de emergencia.",
+    vocab_healthcare: [
+      { en: "emergency contact", es: "contacto de emergencia", context: "Admission form", definition: "" },
+      { en: "spouse", es: "cónyuge / esposo(a)", context: "Family information", definition: "" },
+      { en: "next of kin", es: "pariente más cercano", context: "Hospital records", definition: "" },
+      { en: "relationship", es: "parentesco", context: "Emergency contact form", definition: "" },
+      { en: "phone number", es: "número de teléfono", context: "Contact details", definition: "" },
+    ],
+    grammar_point: {
+      topic: "Possessive 's and Family Vocabulary",
+      explanation:
+        "Use 's to show who something belongs to. Usa 's para mostrar posesión (ej. the patient's husband).",
+      examples: [
+        "What's your husband's name?",
+        "This is my sister's number.",
+        "Who is the patient's next of kin?",
+        "Her mother's phone number is...",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "Can you give me your emergency contact, please? What's your spouse's name and phone number? What is their relationship to you?",
+        questions: [
+          { q: "What is the nurse asking for?", options: ["Medical history", "Emergency contact information", "Insurance details"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "This is my ___ number. (sister)", options: ["sister", "sister's", "sisters"], correct: 1 },
+        { q: "Who is the patient's ___ of kin?", options: ["next", "near", "close"], correct: 0 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+  {
+    id: "a1-checkpoint-1",
+    level: "A1",
+    order: 4,
+    title: "Checkpoint: Basic Patient Interaction",
+    subtitle: "Evaluación: Interacción básica con el paciente",
+    description:
+      "Review greetings, patient questions, routines, and family vocabulary. Repaso de preguntas al paciente, rutinas y vocabulario familiar.",
+    vocab_healthcare: [],
+    grammar_point: { topic: "Review", explanation: "Review of lessons 1-3", examples: [] },
+    content: {
+      is_checkpoint: true,
+      review_lessons: [1, 2, 3],
+      passing_score: 70,
+      questions: [
+        { q: "How do you ask a patient's name?", options: ["What's your name?", "How's your name?", "Who's your name?"], correct: 0 },
+        { q: "'Every morning' shows a:", options: ["Single event", "Routine/habit", "Question"], correct: 1 },
+        { q: "'Next of kin' means:", options: ["Doctor", "Closest relative", "Medicine"], correct: 1 },
+        { q: "The nurse ___ (check) vitals every day.", options: ["check", "checks", "checking"], correct: 1 },
+        { q: "'Occupation' means:", options: ["Job", "Age", "Address"], correct: 0 },
+      ],
+    },
+    is_checkpoint: true,
+    duration_minutes: 25,
+    created_at: "",
+  },
+  {
+    id: "a1-how-do-you-feel",
+    level: "A1",
+    order: 5,
+    title: "How Are You Feeling?",
+    subtitle: "Expresar sentimientos y necesidades básicas",
+    description:
+      "Learn to describe how you feel and express basic needs. Aprende a describir cómo te sientes y expresar necesidades básicas.",
+    vocab_healthcare: [
+      { en: "I feel...", es: "me siento...", context: "Describing feelings", definition: "" },
+      { en: "I have pain", es: "tengo dolor", context: "Describing symptoms", definition: "" },
+      { en: "pain scale", es: "escala de dolor", context: "Pain assessment", definition: "" },
+      { en: "I need...", es: "necesito...", context: "Expressing needs", definition: "" },
+      { en: "thirsty / hungry", es: "con sed / con hambre", context: "Basic needs", definition: "" },
+    ],
+    grammar_point: {
+      topic: "I feel / I have / I need",
+      explanation:
+        "Use 'I feel' + adjective, 'I have' + noun, and 'I need' + noun to talk about your state and needs. Usa 'I feel' + adjetivo, 'I have' + sustantivo, 'I need' + sustantivo.",
+      examples: ["I feel dizzy.", "I have a headache.", "I need some water.", "I feel better today."],
+    },
+    content: {
+      listening: {
+        script:
+          "On a scale from one to ten, how much pain do you feel? I feel a lot of pain, maybe an eight. I also feel a little dizzy and I need some water.",
+        questions: [
+          { q: "How much pain does the patient feel?", options: ["Two", "Five", "Eight"], correct: 2 },
+        ],
+      },
+      quiz: [
+        { q: "I ___ dizzy.", options: ["feel", "have", "need"], correct: 0 },
+        { q: "I ___ a headache.", options: ["feel", "have", "am"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+];
+
+const A2_LESSONS: Lesson[] = [
+  {
+    id: "a2-what-happened",
+    level: "A2",
+    order: 1,
+    title: "What Happened? Taking a Brief History",
+    subtitle: "Simple Past for Patient History",
+    description: "Ask and describe what happened using the simple past tense.",
+    vocab_healthcare: [
+      { en: "fall", definition: "To drop down suddenly by accident", context: "Injury history" },
+      { en: "onset", definition: "The moment a symptom or illness begins", context: "Medical history" },
+      { en: "twist", definition: "To injure a joint by turning it awkwardly", context: "Injury description" },
+      { en: "collapse", definition: "To suddenly fall down, often from weakness or fainting", context: "Emergency history" },
+      { en: "since", definition: "From a point in the past until now", context: "Duration of symptoms" },
+    ],
+    grammar_point: {
+      topic: "Simple Past Tense",
+      explanation:
+        "Use the simple past to describe completed actions or events. Regular verbs add -ed (twisted, collapsed); many common verbs are irregular (fall→fell, break→broke).",
+      examples: [
+        "The pain started yesterday.",
+        "She fell down the stairs.",
+        "He twisted his ankle.",
+        "I felt dizzy this morning.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "Tell me what happened. I was walking down the stairs and I fell. I twisted my ankle and it started to swell immediately.",
+        questions: [
+          { q: "What did the patient injure?", options: ["Wrist", "Ankle", "Knee"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "The pain ___ (start) yesterday.", options: ["start", "started", "starts"], correct: 1 },
+        { q: "She ___ (fall) down the stairs.", options: ["fall", "falled", "fell"], correct: 2 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+  {
+    id: "a2-comparing-symptoms",
+    level: "A2",
+    order: 2,
+    title: "Comparing Symptoms",
+    subtitle: "Comparatives for Describing Change",
+    description: "Describe whether symptoms are improving or worsening using comparatives.",
+    vocab_healthcare: [
+      { en: "worse", definition: "More severe or bad than before", context: "Symptom comparison" },
+      { en: "better", definition: "Improved compared to before", context: "Symptom comparison" },
+      { en: "higher", definition: "Greater in level or amount", context: "Vital signs comparison" },
+      { en: "lower", definition: "Smaller in level or amount", context: "Vital signs comparison" },
+      { en: "than before", definition: "Compared to an earlier time", context: "Describing change" },
+    ],
+    grammar_point: {
+      topic: "Comparative Adjectives",
+      explanation:
+        "Use comparatives to compare two states. Short adjectives add -er (higher, lower); irregular ones change completely (bad→worse, good→better).",
+      examples: [
+        "Is the pain better or worse today?",
+        "My fever is higher than yesterday.",
+        "I feel worse than before.",
+        "Her blood pressure is lower now.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "How do you feel compared to yesterday? Actually, I feel much better. The pain is less than before, but I still feel a little weak.",
+        questions: [
+          { q: "How does the patient feel today?", options: ["Worse", "Better", "The same"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "My fever is ___ than yesterday. (high)", options: ["high", "higher", "highest"], correct: 1 },
+        { q: "I feel ___ today. (bad → comparative)", options: ["worse", "bad", "badder"], correct: 0 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+  {
+    id: "a2-instructions-procedures",
+    level: "A2",
+    order: 3,
+    title: "Instructions & Procedures",
+    subtitle: "Imperatives and Sequencing",
+    description: "Give clear step-by-step instructions using imperatives and sequence words.",
+    vocab_healthcare: [
+      { en: "first", definition: "Used to introduce the initial step", context: "Sequencing instructions" },
+      { en: "then / next", definition: "Used to introduce the following step", context: "Sequencing instructions" },
+      { en: "finally", definition: "Used to introduce the last step", context: "Sequencing instructions" },
+      { en: "breathe in / breathe out", definition: "To inhale / to exhale", context: "Physical exam instructions" },
+      { en: "hold still", definition: "Do not move", context: "Procedure instructions" },
+    ],
+    grammar_point: {
+      topic: "Imperatives for Instructions",
+      explanation:
+        "Use the base form of the verb (no subject) to give instructions. Sequence words like first, then, next, finally help organize steps clearly.",
+      examples: [
+        "First, take a deep breath.",
+        "Then, hold it for five seconds.",
+        "Next, breathe out slowly.",
+        "Finally, relax your arm.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "Please follow my instructions. First, sit down and relax. Then, breathe in slowly through your nose. Hold it for three seconds. Finally, breathe out through your mouth.",
+        questions: [
+          { q: "What is the first instruction?", options: ["Breathe out", "Sit down and relax", "Hold your breath"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "___, take a deep breath. (first step)", options: ["First", "Finally", "Then"], correct: 0 },
+        { q: "Please ___ still while I check your arm.", options: ["holds", "hold", "holding"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 20,
+    created_at: "",
+  },
+  {
+    id: "a2-checkpoint-1",
+    level: "A2",
+    order: 4,
+    title: "Checkpoint: Describing Change and Giving Instructions",
+    subtitle: "Evaluación: Historia clínica, comparativos e instrucciones",
+    description:
+      "Review past tense history-taking, comparatives, and giving instructions.",
+    vocab_healthcare: [],
+    grammar_point: { topic: "Review", explanation: "Review of lessons 1-3", examples: [] },
+    content: {
+      is_checkpoint: true,
+      review_lessons: [1, 2, 3],
+      passing_score: 70,
+      questions: [
+        { q: "She ___ (fall) down the stairs.", options: ["fall", "falled", "fell"], correct: 2 },
+        { q: "My fever is ___ than yesterday. (high)", options: ["high", "higher", "highest"], correct: 1 },
+        { q: "___, take a deep breath. (first step)", options: ["First", "Finally", "Then"], correct: 0 },
+        { q: "'Onset' means:", options: ["The end of an illness", "The beginning of a symptom", "A type of medicine"], correct: 1 },
+        { q: "'Hold still' means:", options: ["Move quickly", "Do not move", "Breathe deeply"], correct: 1 },
+      ],
+    },
+    is_checkpoint: true,
+    duration_minutes: 25,
+    created_at: "",
+  },
+  {
+    id: "a2-family-history",
+    level: "A2",
+    order: 5,
+    title: "Family Medical History",
+    subtitle: "Have/Has for Family Health Background",
+    description: "Ask about a patient's family medical history using have/has.",
+    vocab_healthcare: [
+      { en: "family history", definition: "Health conditions that run in a patient's family", context: "Medical history form" },
+      { en: "diabetes", definition: "A condition causing high blood sugar", context: "Common chronic condition" },
+      { en: "heart disease", definition: "A condition affecting the heart", context: "Common chronic condition" },
+      { en: "allergic to", definition: "Having a bad reaction to a substance", context: "Allergy history" },
+      { en: "run in the family", definition: "To be a health condition common among relatives", context: "Family history idiom" },
+    ],
+    grammar_point: {
+      topic: "Have/Has for Possession and Health Conditions",
+      explanation:
+        "Use 'have' with I/you/we/they and 'has' with he/she/it to talk about health conditions.",
+      examples: [
+        "Does your mother have diabetes?",
+        "My father has heart disease.",
+        "Do you have any allergies?",
+        "She has no family history of cancer.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "Does anyone in your family have diabetes or heart disease? Yes, my father has heart disease and my grandmother had diabetes.",
+        questions: [
+          { q: "What condition does the patient's father have?", options: ["Diabetes", "Heart disease", "Allergies"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "___ your mother have diabetes?", options: ["Does", "Do", "Is"], correct: 0 },
+        { q: "My father ___ heart disease.", options: ["have", "has", "having"], correct: 1 },
       ],
     },
     is_checkpoint: false,
@@ -746,13 +1137,403 @@ const B1_LESSONS: Lesson[] = [
   },
 ];
 
+const B2_LESSONS: Lesson[] = [
+  {
+    id: "b2-diagnosis-treatment",
+    level: "B2",
+    order: 1,
+    title: "Explaining Diagnosis & Treatment Options",
+    subtitle: "Modals for Advice and Possibility",
+    description: "Explain diagnoses and discuss treatment options using modal verbs.",
+    vocab_healthcare: [
+      { en: "prognosis", definition: "The likely course or outcome of a medical condition", context: "Discussing diagnosis" },
+      { en: "side effect", definition: "An unwanted effect of a medication or treatment", context: "Treatment options" },
+      { en: "recommend", definition: "To suggest something as the best option", context: "Giving medical advice" },
+      { en: "underlying condition", definition: "A health problem that is the root cause of symptoms", context: "Diagnosis" },
+      { en: "risk factor", definition: "Something that increases the chance of developing a condition", context: "Assessing risk" },
+    ],
+    grammar_point: {
+      topic: "Modal Verbs for Advice and Possibility",
+      explanation:
+        "Use 'should' for recommendations, 'might/could' for possibility, and 'must' for strong necessity when discussing diagnosis and treatment.",
+      examples: [
+        "You should take this medication twice a day.",
+        "This might be a side effect of the treatment.",
+        "We could try a different approach.",
+        "You must avoid alcohol with this medication.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "Based on your symptoms, this could be related to your blood pressure medication. You should schedule a follow-up in two weeks. We might need to adjust your dosage.",
+        questions: [
+          { q: "What does the doctor suggest?", options: ["Stop all medication", "Schedule a follow-up", "Go to the emergency room"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "You ___ take this medication with food.", options: ["should", "must not", "couldn't"], correct: 0 },
+        { q: "This ___ be a side effect.", options: ["should", "might", "must"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 25,
+    created_at: "",
+  },
+  {
+    id: "b2-passive-voice-reports",
+    level: "B2",
+    order: 2,
+    title: "Passive Voice in Clinical Reports",
+    subtitle: "Passive Voice for Objective Reporting",
+    description: "Use passive voice to write and speak about clinical procedures and reports objectively.",
+    vocab_healthcare: [
+      { en: "administered", definition: "Given to a patient (medication or treatment)", context: "Clinical documentation" },
+      { en: "documented", definition: "Recorded in writing, usually in medical notes", context: "Clinical documentation" },
+      { en: "referred", definition: "Sent to see another specialist or department", context: "Patient care coordination" },
+      { en: "discharged", definition: "Formally allowed to leave the hospital", context: "End of treatment" },
+      { en: "conducted", definition: "Carried out or performed (a test or procedure)", context: "Clinical procedures" },
+    ],
+    grammar_point: {
+      topic: "Passive Voice (is/was + past participle)",
+      explanation:
+        "Use the passive voice when the action matters more than who did it — common in clinical documentation and handovers.",
+      examples: [
+        "The medication was administered at 8am.",
+        "Tests were conducted this morning.",
+        "The patient was referred to cardiology.",
+        "She was discharged yesterday.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "The patient was admitted last night with chest pain. An ECG was conducted and blood tests were ordered. She was referred to cardiology for further evaluation.",
+        questions: [
+          { q: "Why was the patient referred to cardiology?", options: ["Routine checkup", "Chest pain", "A broken bone"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "The medication ___ administered at 8am.", options: ["was", "is being", "has"], correct: 0 },
+        { q: "Tests ___ conducted this morning.", options: ["was", "were", "is"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 25,
+    created_at: "",
+  },
+  {
+    id: "b2-reported-speech",
+    level: "B2",
+    order: 3,
+    title: "Reported Speech: Relaying Patient Information",
+    subtitle: "Indirect Speech for Handovers",
+    description: "Relay what a patient or colleague said using reported speech.",
+    vocab_healthcare: [
+      { en: "mentioned", definition: "Said something briefly, often in passing", context: "Reporting what someone said" },
+      { en: "complained of", definition: "Reported a symptom or problem", context: "Reporting patient symptoms" },
+      { en: "stated", definition: "Said clearly and directly", context: "Formal reporting" },
+      { en: "denied", definition: "Said that something was not true", context: "Reporting negative findings" },
+      { en: "according to", definition: "As stated or reported by", context: "Attributing information" },
+    ],
+    grammar_point: {
+      topic: "Reported Speech",
+      explanation:
+        "When relaying what someone said, shift the tense back: 'I feel dizzy' becomes 'She said she felt dizzy'. Common reporting verbs: said, mentioned, stated, complained of, denied.",
+      examples: [
+        "She said she felt dizzy.",
+        "He mentioned that the pain started yesterday.",
+        "The patient complained of nausea.",
+        "He denied having any allergies.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "The patient said she had been feeling tired for two weeks. She mentioned that she also had trouble sleeping. She denied any chest pain or shortness of breath.",
+        questions: [
+          { q: "What did the patient deny?", options: ["Feeling tired", "Trouble sleeping", "Chest pain"], correct: 2 },
+        ],
+      },
+      quiz: [
+        { q: "She said she ___ dizzy. (feel)", options: ["feels", "felt", "feeling"], correct: 1 },
+        { q: "He ___ having any allergies.", options: ["denied", "denies", "deny"], correct: 0 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 25,
+    created_at: "",
+  },
+  {
+    id: "b2-checkpoint-1",
+    level: "B2",
+    order: 4,
+    title: "Checkpoint: Clinical Reporting & Modals",
+    subtitle: "Evaluación: Modales, voz pasiva y discurso indirecto",
+    description: "Review modals, passive voice, and reported speech for clinical communication.",
+    vocab_healthcare: [],
+    grammar_point: { topic: "Review", explanation: "Review of lessons 1-3", examples: [] },
+    content: {
+      is_checkpoint: true,
+      review_lessons: [1, 2, 3],
+      passing_score: 70,
+      questions: [
+        { q: "You ___ take this medication with food.", options: ["should", "must not", "couldn't"], correct: 0 },
+        { q: "The medication ___ administered at 8am.", options: ["was", "is being", "has"], correct: 0 },
+        { q: "She said she ___ dizzy. (feel)", options: ["feels", "felt", "feeling"], correct: 1 },
+        { q: "'Prognosis' means:", options: ["A type of medication", "The likely outcome of a condition", "A hospital department"], correct: 1 },
+        { q: "'Discharged' means:", options: ["Admitted to hospital", "Formally allowed to leave", "Given medication"], correct: 1 },
+      ],
+    },
+    is_checkpoint: true,
+    duration_minutes: 30,
+    created_at: "",
+  },
+  {
+    id: "b2-difficult-conversations",
+    level: "B2",
+    order: 5,
+    title: "Difficult Conversations: Breaking News & Handling Concerns",
+    subtitle: "Softening Language and Empathy Phrases",
+    description: "Use softening language and empathy phrases to handle difficult conversations with patients.",
+    vocab_healthcare: [
+      { en: "I'm afraid...", definition: "A polite way to introduce bad or difficult news", context: "Breaking news" },
+      { en: "unfortunately", definition: "Used to introduce disappointing information", context: "Delivering bad news" },
+      { en: "I understand this is difficult", definition: "An empathy phrase acknowledging emotional impact", context: "Showing empathy" },
+      { en: "reassure", definition: "To say something to reduce someone's worry", context: "Comforting a patient" },
+      { en: "address your concerns", definition: "To respond to and deal with someone's worries", context: "Handling complaints" },
+    ],
+    grammar_point: {
+      topic: "Softening Language for Sensitive Topics",
+      explanation:
+        "Use hedging phrases and empathy statements to deliver difficult news gently: 'I'm afraid...', 'Unfortunately...', 'I understand this is difficult, but...'",
+      examples: [
+        "I'm afraid the results show...",
+        "Unfortunately, we need to run more tests.",
+        "I understand this is difficult news.",
+        "Let me reassure you that we'll take good care of you.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "I'm afraid the test results show some abnormalities. I understand this is difficult news to hear. Let me explain what the next steps will be, and I want to reassure you that we're here to support you.",
+        questions: [
+          { q: "What is the doctor's tone in this conversation?", options: ["Angry", "Empathetic and reassuring", "Indifferent"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "'I'm afraid...' is used to:", options: ["Show fear", "Introduce difficult news gently", "Ask a question"], correct: 1 },
+        { q: "'Reassure' means to:", options: ["Increase worry", "Reduce someone's worry", "Ignore someone"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 25,
+    created_at: "",
+  },
+];
+
+const C1_LESSONS: Lesson[] = [
+  {
+    id: "c1-differential-diagnosis",
+    level: "C1",
+    order: 1,
+    title: "Advanced Clinical Reasoning & Differential Diagnosis",
+    subtitle: "Hedging Language for Clinical Uncertainty",
+    description: "Discuss differential diagnoses and clinical uncertainty using advanced hedging language.",
+    vocab_healthcare: [
+      { en: "differential diagnosis", definition: "A list of possible conditions that could explain a patient's symptoms", context: "Clinical reasoning" },
+      { en: "presumptive", definition: "Assumed to be true based on available evidence, though not confirmed", context: "Diagnosis" },
+      { en: "rule out", definition: "To eliminate a possibility through testing", context: "Diagnostic process" },
+      { en: "inconclusive", definition: "Not leading to a definite conclusion", context: "Test results" },
+      { en: "warrant further investigation", definition: "To justify additional testing or examination", context: "Clinical decision-making" },
+    ],
+    grammar_point: {
+      topic: "Hedging Language for Clinical Uncertainty",
+      explanation:
+        "Use hedging expressions to communicate uncertainty professionally: 'This could indicate...', 'It's possible that...', 'I suspect...', 'This may warrant further investigation.'",
+      examples: [
+        "This could indicate an underlying infection.",
+        "It's possible that the symptoms are unrelated.",
+        "I suspect this may be a drug interaction.",
+        "These results warrant further investigation.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "Based on the presenting symptoms, this could indicate several possibilities. It's possible we're dealing with an atypical presentation of pneumonia, though I can't rule out a pulmonary embolism at this stage. The inconclusive chest X-ray certainly warrants further investigation — I'd recommend a CT angiogram to clarify.",
+        questions: [
+          { q: "What does the speaker want to do next?", options: ["Discharge the patient", "Order a CT angiogram", "Stop all tests"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "'Rule out' means to:", options: ["Confirm a diagnosis", "Eliminate a possibility", "Schedule a test"], correct: 1 },
+        { q: "'Presumptive' means:", options: ["Confirmed with certainty", "Assumed based on evidence, not confirmed", "Completely unknown"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 30,
+    created_at: "",
+  },
+  {
+    id: "c1-advocating-patients",
+    level: "C1",
+    order: 2,
+    title: "Persuasive Communication: Advocating for Patients",
+    subtitle: "Emphatic Structures and Argumentation",
+    description: "Advocate effectively for patients using emphatic and persuasive language structures.",
+    vocab_healthcare: [
+      { en: "advocate for", definition: "To publicly support or argue in favor of someone's needs", context: "Patient advocacy" },
+      { en: "it is imperative that", definition: "A formal way to stress something is essential", context: "Emphatic argumentation" },
+      { en: "compelling", definition: "Convincing or persuasive", context: "Making a case" },
+      { en: "undermine", definition: "To weaken or damage, often gradually", context: "Discussing risks" },
+      { en: "in light of", definition: "Considering or taking into account", context: "Making a case based on evidence" },
+    ],
+    grammar_point: {
+      topic: "Emphatic Structures for Advocacy",
+      explanation:
+        "Use emphatic structures to make a persuasive case: 'It is imperative that...', 'What concerns me most is...', 'In light of these findings, I strongly recommend...'",
+      examples: [
+        "It is imperative that we address this immediately.",
+        "What concerns me most is the delay in treatment.",
+        "In light of these findings, I strongly recommend a specialist referral.",
+        "This is a compelling case for immediate action.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "It is imperative that we escalate this case. What concerns me most is that the patient's condition has been deteriorating for hours without adequate intervention. In light of these findings, I strongly recommend an immediate consultation with the on-call specialist.",
+        questions: [
+          { q: "What is the speaker's main concern?", options: ["Paperwork delays", "The patient's deteriorating condition", "Staff scheduling"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "'It is imperative that' expresses:", options: ["A suggestion", "Something essential/urgent", "A minor preference"], correct: 1 },
+        { q: "'Advocate for' means to:", options: ["Argue against someone", "Support someone's needs", "Ignore a situation"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 30,
+    created_at: "",
+  },
+  {
+    id: "c1-professional-register",
+    level: "C1",
+    order: 3,
+    title: "Idiomatic & Professional Register",
+    subtitle: "Register Switching in Clinical Settings",
+    description: "Recognize and use appropriate professional register, adjusting tone between colleagues and patients.",
+    vocab_healthcare: [
+      { en: "on the mend", definition: "Recovering well (informal, used with patients/families)", context: "Informal patient update" },
+      { en: "stable but guarded", definition: "A formal clinical phrase meaning stable but with some risk of decline", context: "Formal clinical register" },
+      { en: "a rocky recovery", definition: "A recovery with complications or setbacks (informal)", context: "Informal patient update" },
+      { en: "touch and go", definition: "A critical, uncertain situation (informal idiom)", context: "Informal discussion among colleagues" },
+      { en: "register", definition: "The level of formality used in language depending on context", context: "Professional communication" },
+    ],
+    grammar_point: {
+      topic: "Register Switching",
+      explanation:
+        "Professional healthcare English requires switching between formal register (with colleagues, in documentation) and warmer, informal register (with patients and families) — both convey the same information differently.",
+      examples: [
+        "Formal: 'The patient's condition is stable but guarded.' Informal: 'She's doing okay, but we're keeping a close eye on her.'",
+        "Formal: 'Recovery has been complicated by post-operative infection.' Informal: 'It's been a bit of a rocky recovery.'",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "To the family: Good news — he's on the mend and should be home by the weekend. To a colleague: It was touch and go for the first 48 hours, but he's stabilized now.",
+        questions: [
+          { q: "Which phrase is used with the colleague, not the family?", options: ["On the mend", "Touch and go", "Home by the weekend"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "'On the mend' is an example of:", options: ["Formal clinical register", "Informal, warm register", "Technical jargon"], correct: 1 },
+        { q: "'Touch and go' means:", options: ["A routine situation", "A critical, uncertain situation", "A scheduled appointment"], correct: 1 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 30,
+    created_at: "",
+  },
+  {
+    id: "c1-checkpoint-1",
+    level: "C1",
+    order: 4,
+    title: "Checkpoint: Advanced Clinical Communication",
+    subtitle: "Evaluación: Razonamiento clínico, persuasión y registro",
+    description: "Review hedging language, emphatic structures, and professional register.",
+    vocab_healthcare: [],
+    grammar_point: { topic: "Review", explanation: "Review of lessons 1-3", examples: [] },
+    content: {
+      is_checkpoint: true,
+      review_lessons: [1, 2, 3],
+      passing_score: 75,
+      questions: [
+        { q: "'Rule out' means to:", options: ["Confirm a diagnosis", "Eliminate a possibility", "Schedule a test"], correct: 1 },
+        { q: "'It is imperative that' expresses:", options: ["A suggestion", "Something essential/urgent", "A minor preference"], correct: 1 },
+        { q: "'Touch and go' means:", options: ["A routine situation", "A critical, uncertain situation", "A scheduled appointment"], correct: 1 },
+        { q: "'Presumptive' means:", options: ["Confirmed with certainty", "Assumed based on evidence, not confirmed", "Completely unknown"], correct: 1 },
+        { q: "'Advocate for' means to:", options: ["Argue against someone", "Support someone's needs", "Ignore a situation"], correct: 1 },
+      ],
+    },
+    is_checkpoint: true,
+    duration_minutes: 35,
+    created_at: "",
+  },
+  {
+    id: "c1-ethical-discussions",
+    level: "C1",
+    order: 5,
+    title: "Cross-Cultural Communication & Ethical Discussions",
+    subtitle: "Diplomatic Disagreement and Ethical Nuance",
+    description: "Navigate disagreement and ethical discussions diplomatically in a multicultural healthcare setting.",
+    vocab_healthcare: [
+      { en: "with all due respect", definition: "A polite phrase used to introduce respectful disagreement", context: "Diplomatic disagreement" },
+      { en: "I see your point, but", definition: "A phrase acknowledging another view before disagreeing", context: "Diplomatic disagreement" },
+      { en: "cultural sensitivity", definition: "Awareness and respect for cultural differences in care", context: "Cross-cultural care" },
+      { en: "informed consent", definition: "A patient's agreement to treatment based on full understanding of risks", context: "Medical ethics" },
+      { en: "autonomy", definition: "A patient's right to make their own healthcare decisions", context: "Medical ethics" },
+    ],
+    grammar_point: {
+      topic: "Diplomatic Language for Disagreement",
+      explanation:
+        "Use softened disagreement structures to maintain professionalism: 'I see your point, but...', 'With all due respect, I would suggest...', 'While I understand your perspective, I'm concerned that...'",
+      examples: [
+        "I see your point, but I think we should consider the family's wishes.",
+        "With all due respect, I'd like to propose an alternative approach.",
+        "While I understand your perspective, patient autonomy is a key concern here.",
+        "I hear what you're saying, but I have some reservations.",
+      ],
+    },
+    content: {
+      listening: {
+        script:
+          "I see your point about the treatment timeline, but with all due respect, I think we need to prioritize the patient's informed consent here. While I understand your perspective, respecting her autonomy is essential given her cultural background and personal wishes.",
+        questions: [
+          { q: "What is the main ethical concern discussed?", options: ["Cost of treatment", "Patient autonomy and informed consent", "Hospital scheduling"], correct: 1 },
+        ],
+      },
+      quiz: [
+        { q: "'With all due respect' is used to:", options: ["Insult someone", "Introduce respectful disagreement", "End a conversation"], correct: 1 },
+        { q: "'Autonomy' refers to:", options: ["A patient's right to decide", "A hospital policy", "A type of medication"], correct: 0 },
+      ],
+    },
+    is_checkpoint: false,
+    duration_minutes: 30,
+    created_at: "",
+  },
+];
+
 const LESSONS_MAP: Record<string, Lesson[]> = {
   a0: A0_LESSONS,
-  a1: [],
-  a2: [],
+  a1: A1_LESSONS,
+  a2: A2_LESSONS,
   b1: B1_LESSONS,
-  b2: [],
-  c1: [],
+  b2: B2_LESSONS,
+  c1: C1_LESSONS,
 };
 
 const LEVEL_SUBTITLES: Record<string, string> = {
@@ -771,11 +1552,6 @@ const LEVEL_NAMES: Record<string, string> = {
   b1: "Intermediate",
   b2: "Upper-Intermediate",
   c1: "Advanced",
-};
-
-const COMPLETED_LESSONS: Record<string, string[]> = {
-  a0: ["a0-greetings", "a0-body-parts"],
-  b1: ["b1-isbar"],
 };
 
 // ─── Components ─────────────────────────────────────────────────
@@ -896,10 +1672,64 @@ export default function LevelLessonsPage() {
   const level = rawLevel.replace(/[^a-z0-9]/g, "");
 
   const lessons = LESSONS_MAP[level] ?? [];
-  const completedIds = COMPLETED_LESSONS[level] ?? [];
-  const completedCount = lessons.filter((l) =>
-    completedIds.includes(l.id)
-  ).length;
+
+  const [completedOrders, setCompletedOrders] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProgress() {
+      setLoading(true);
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: dbLessons } = await (supabase as any)
+        .from("lessons")
+        .select("id, order")
+        .eq("level", level.toUpperCase());
+
+      if (!dbLessons || dbLessons.length === 0) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lessonIds = (dbLessons as any[]).map((l) => l.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: progress } = await (supabase as any)
+        .from("user_progress")
+        .select("lesson_id")
+        .eq("user_id", user.id)
+        .eq("completed", true)
+        .in("lesson_id", lessonIds);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const completedDbIds = new Set(((progress ?? []) as any[]).map((p) => p.lesson_id));
+      const orders = new Set(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (dbLessons as any[]).filter((l) => completedDbIds.has(l.id)).map((l) => l.order)
+      );
+      if (!cancelled) {
+        setCompletedOrders(orders);
+        setLoading(false);
+      }
+    }
+
+    loadProgress();
+    return () => {
+      cancelled = true;
+    };
+  }, [level]);
+
+  const completedCount = lessons.filter((l) => completedOrders.has(l.order)).length;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -935,9 +1765,10 @@ export default function LevelLessonsPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="mb-6"
+            className="mb-6 flex items-center gap-2"
           >
             <ProgressBar completed={completedCount} total={lessons.length} />
+            {loading && <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-slate-500" />}
           </motion.div>
         )}
 
@@ -954,7 +1785,7 @@ export default function LevelLessonsPage() {
                 key={lesson.id}
                 lesson={lesson}
                 index={i}
-                isCompleted={completedIds.includes(lesson.id)}
+                isCompleted={completedOrders.has(lesson.order)}
                 onClick={() =>
                   router.push(
                     `/lessons/${level.toUpperCase()}/${lesson.id}`
