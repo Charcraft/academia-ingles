@@ -43,13 +43,17 @@ export default function DashboardShell({ profile, children }: DashboardShellProp
   const pathname = usePathname();
   const router = useRouter();
   const setProfile = useStore((s) => s.setProfile);
+  const setDailyMinutes = useStore((s) => s.setDailyMinutes);
+  const storedProfile = useStore((s) => s.profile);
+  const storedDailyMinutes = useStore((s) => s.dailyMinutes);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setProfile(profile);
+      setDailyMinutes(profile.daily_minutes_today ?? 0);
     }
-  }, [profile, setProfile]);
+  }, [profile, setDailyMinutes, setProfile]);
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
@@ -64,9 +68,12 @@ export default function DashboardShell({ profile, children }: DashboardShellProp
     closeMobile();
   }, [pathname, closeMobile]);
 
-  const dailyGoal = profile?.daily_goal ?? 120;
-  const dailyMinutes = profile?.daily_minutes_today ?? 45;
-  const dailyProgress = Math.min((dailyMinutes / dailyGoal) * 100, 100);
+  const activeProfile = storedProfile ?? profile;
+  const dailyGoal = activeProfile?.daily_goal ?? 120;
+  const dailyMinutes = storedDailyMinutes;
+  const dailyProgress = dailyGoal > 0
+    ? Math.min((dailyMinutes / dailyGoal) * 100, 100)
+    : 0;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#121212]">

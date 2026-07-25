@@ -22,20 +22,120 @@ import {
   Sparkles,
   ArrowRight,
   Volume2,
+  Loader2,
   Check,
   X,
 } from "lucide-react";
 import { cn, needsNativeLanguageSupport } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useStore } from "@/store";
 import type { Lesson, VocabItem, QuizQuestion } from "@/types";
 
 // ─── Speech helper ──────────────────────────────────────────────
 
 function speakText(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "en-US";
   utterance.rate = 0.9;
-  speechSynthesis.speak(utterance);
+  const englishVoice = window.speechSynthesis
+    .getVoices()
+    .find((voice) => voice.lang.toLowerCase().startsWith("en-us"));
+  if (englishVoice) utterance.voice = englishVoice;
+  window.speechSynthesis.speak(utterance);
+}
+
+function AssistedText({
+  text,
+  translation,
+  className,
+  translationClassName,
+}: {
+  text: string;
+  translation?: string;
+  className?: string;
+  translationClassName?: string;
+}) {
+  const [spanish, setSpanish] = useState<string | null>(translation ?? null);
+  const [loadingTranslation, setLoadingTranslation] = useState(false);
+  const [translationError, setTranslationError] = useState(false);
+
+  useEffect(() => {
+    if (translation || typeof window === "undefined") return;
+    const cached = window.localStorage.getItem(`academy-es:${text}`);
+    if (cached) setSpanish(cached);
+  }, [text, translation]);
+
+  const translate = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (spanish || loadingTranslation) return;
+    setLoadingTranslation(true);
+    setTranslationError(false);
+    try {
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = (await response.json()) as {
+        translation?: string;
+        error?: string;
+      };
+      if (!response.ok || !data.translation) throw new Error(data.error);
+      setSpanish(data.translation);
+      window.localStorage.setItem(`academy-es:${text}`, data.translation);
+    } catch {
+      setTranslationError(true);
+    } finally {
+      setLoadingTranslation(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className={className}>{text}</p>
+      {spanish && (
+        <p className={translationClassName ?? "mt-1 text-xs leading-relaxed text-teal-300/80"}>
+          {spanish}
+        </p>
+      )}
+      {translationError && (
+        <p className="mt-1 text-xs text-red-400">
+          No se pudo traducir. Inténtalo de nuevo.
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            speakText(text);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-500/10 px-2.5 py-1.5 text-xs font-medium text-teal-300 transition-colors hover:bg-teal-500/20"
+          aria-label={`Escuchar pronunciación: ${text}`}
+        >
+          <Volume2 className="h-3.5 w-3.5" />
+          Escuchar
+        </button>
+        {!spanish && (
+          <button
+            type="button"
+            onClick={translate}
+            disabled={loadingTranslation}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-60"
+          >
+            {loadingTranslation ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Languages className="h-3.5 w-3.5" />
+            )}
+            {loadingTranslation ? "Traduciendo..." : "Ver traducción"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Live speech recognition helper ──────────────────────────────
@@ -89,6 +189,11 @@ function normalizeWord(word: string): string {
 
 function wordsOf(text: string): string[] {
   return text.split(/\s+/).map(normalizeWord).filter(Boolean);
+}
+
+function splitSentences(text: string): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+  return (sentences ?? [text]).map((sentence) => sentence.trim()).filter(Boolean);
 }
 
 // General, honest pronunciation guidance for Spanish speakers learning
@@ -1837,10 +1942,8 @@ function TabButton({
 
 function FlipCard({
   item,
-  isA0,
 }: {
   item: VocabItem;
-  isA0: boolean;
 }) {
   const [flipped, setFlipped] = useState(false);
 
@@ -1853,7 +1956,7 @@ function FlipCard({
       <motion.div
         animate={{ rotateY: flipped ? 180 : 0 }}
         transition={{ duration: 0.4 }}
-        className="relative w-full h-32"
+        className="relative w-full h-44"
         style={{ transformStyle: "preserve-3d" }}
       >
         {/* Front */}
@@ -1864,7 +1967,12 @@ function FlipCard({
           )}
           style={{ backfaceVisibility: "hidden" }}
         >
-          <p className="text-white font-medium text-center">{item.en}</p>
+          <AssistedText
+            text={item.en}
+            translation={item.es}
+            className="text-center font-medium text-white"
+            translationClassName="mt-1 text-center text-xs text-teal-300/80"
+          />
           <p className="text-slate-500 text-xs mt-1 text-center">{item.context}</p>
           <p className="text-teal-400/60 text-[10px] mt-2">Tap to flip</p>
         </div>
@@ -1877,16 +1985,14 @@ function FlipCard({
           )}
           style={{ transform: "rotateY(180deg)", backfaceVisibility: "hidden" }}
         >
-          {isA0 && item.es ? (
+          {item.es ? (
             <>
               <p className="text-teal-300 font-medium text-center">{item.es}</p>
               <p className="text-slate-500 text-xs mt-1">{item.en}</p>
             </>
           ) : (
             <>
-              <p className="text-teal-300 text-sm text-center leading-snug">
-                {item.definition}
-              </p>
+              <p className="text-teal-300 text-sm text-center leading-snug">{item.definition}</p>
               <p className="text-slate-500 text-xs mt-1">{item.en}</p>
             </>
           )}
@@ -1905,6 +2011,7 @@ export default function LessonPage() {
 
   const mockData = ALL_MOCK_DATA[lessonId];
   const lesson = mockData?.lesson;
+  const setDailyMinutes = useStore((state) => state.setDailyMinutes);
 
   // Tab state
   const [activeTab, setActiveTab] = useState(0);
@@ -1956,14 +2063,14 @@ export default function LessonPage() {
       listeningTotal: number;
       speakingBand: number | null;
     }) => {
-      if (!lesson) return;
+      if (!lesson) return false;
       setSaving(true);
       try {
         const supabase = createClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user) return false;
 
         // Mock lesson content isn't backed by a real DB row yet — resolve
         // the matching lessons.id via the (level, order) it was seeded with.
@@ -1980,7 +2087,7 @@ export default function LessonPage() {
         const dbLesson = ((levelLessons ?? []) as any[]).find(
           (l) => l.order === lesson.order
         );
-        if (!dbLesson) return;
+        if (!dbLesson) throw new Error("Lesson database record not found");
 
         const overallScore = Math.round(
           ((scores.quizTotal > 0 ? scores.quizScore / scores.quizTotal : 0) +
@@ -1991,7 +2098,7 @@ export default function LessonPage() {
         );
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from("user_progress").upsert(
+        const { error: progressError } = await (supabase as any).from("user_progress").upsert(
           {
             user_id: user.id,
             lesson_id: dbLesson.id,
@@ -2006,11 +2113,55 @@ export default function LessonPage() {
           },
           { onConflict: "user_id,lesson_id" }
         );
+        if (progressError) throw progressError;
+
+        // Keep the daily timer in sync with the same source used by the
+        // dashboard. This also handles repeated lessons without double-counting.
+        const { data: activityRows } = await (supabase as any)
+          .from("user_progress")
+          .select("time_spent, completed_at")
+          .eq("user_id", user.id)
+          .eq("completed", true);
+        const now = new Date();
+        const secondsToday = ((activityRows ?? []) as Array<{
+          time_spent: number | null;
+          completed_at: string | null;
+        }>).reduce((sum, row) => {
+          if (!row.completed_at) return sum;
+          const completedAt = new Date(row.completed_at);
+          const isToday =
+            completedAt.getFullYear() === now.getFullYear() &&
+            completedAt.getMonth() === now.getMonth() &&
+            completedAt.getDate() === now.getDate();
+          return isToday ? sum + Math.max(Number(row.time_spent) || 0, 0) : sum;
+        }, 0);
+        const minutesToday = Math.ceil(secondsToday / 60);
+        setDailyMinutes(minutesToday);
+
+        const localDate = [
+          now.getFullYear(),
+          String(now.getMonth() + 1).padStart(2, "0"),
+          String(now.getDate()).padStart(2, "0"),
+        ].join("-");
+        await (supabase as any)
+          .from("profiles")
+          .update({
+            daily_minutes_today: minutesToday,
+            last_active_date: localDate,
+          })
+          .eq("id", user.id);
+
+        return true;
+      } catch {
+        window.alert(
+          "No se pudo guardar la lección. Revisa tu conexión e inténtalo de nuevo."
+        );
+        return false;
       } finally {
         setSaving(false);
       }
     },
-    [lesson, elapsed, completedTabs, grammarScore]
+    [lesson, elapsed, completedTabs, grammarScore, setDailyMinutes]
   );
 
   const _formatTime = (seconds: number) => {
@@ -2075,8 +2226,16 @@ export default function LessonPage() {
               {lesson.duration_minutes} min
             </span>
           </div>
-          <h1 className="text-xl font-bold">{lesson.title}</h1>
-          <p className="text-slate-400 text-sm mt-1">{lesson.subtitle}</p>
+          <AssistedText
+            text={lesson.title}
+            className="text-xl font-bold text-white"
+          />
+          <div className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] p-3">
+            <AssistedText
+              text={lesson.description}
+              className="text-sm leading-relaxed text-slate-300"
+            />
+          </div>
         </motion.div>
 
         {/* Tab navigation */}
@@ -2189,14 +2348,14 @@ export default function LessonPage() {
             saving={saving}
             isA0={isA0}
             onCompleteLesson={async () => {
-              await persistCompletion({
+              const saved = await persistCompletion({
                 quizScore,
                 quizTotal: mockData.quizQuestions.length,
                 listeningScore,
                 listeningTotal: lesson.content.listening?.questions.length ?? 0,
                 speakingBand: speakingBandScore,
               });
-              setLessonCompleted(true);
+              if (saved) setLessonCompleted(true);
             }}
           />
         )}
@@ -2255,7 +2414,7 @@ function VocabularyTab({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {lesson.vocab_healthcare.map((item, i) => (
           <div key={i} onClick={() => handleCardFlip(i)}>
-            <FlipCard item={item} isA0={isA0} />
+            <FlipCard item={item} />
           </div>
         ))}
       </div>
@@ -2323,12 +2482,16 @@ function GrammarTab({
     >
       {/* Theory */}
       <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-        <h2 className="text-lg font-semibold text-teal-400 mb-2">
-          {lesson.grammar_point.topic}
-        </h2>
-        <p className="text-slate-300 text-sm mb-3">
-          {lesson.grammar_point.explanation}
-        </p>
+        <AssistedText
+          text={lesson.grammar_point.topic}
+          className="text-lg font-semibold text-teal-400"
+        />
+        <div className="mt-3 mb-4">
+          <AssistedText
+            text={lesson.grammar_point.explanation}
+            className="text-sm leading-relaxed text-slate-300"
+          />
+        </div>
         <div className="space-y-1.5">
           <Instruction
             en="Examples"
@@ -2337,12 +2500,9 @@ function GrammarTab({
             className="text-xs text-slate-500 uppercase tracking-wide"
           />
           {lesson.grammar_point.examples.map((ex, i) => (
-            <p
-              key={i}
-              className="text-sm text-slate-400 bg-white/[0.03] rounded-lg px-3 py-2"
-            >
-              {ex}
-            </p>
+            <div key={i} className="rounded-lg bg-white/[0.03] px-3 py-2">
+              <AssistedText text={ex} className="text-sm text-slate-300" />
+            </div>
           ))}
         </div>
       </div>
@@ -2370,9 +2530,12 @@ function GrammarTab({
                   : "border-white/5"
               )}
             >
-              <p className="text-sm text-white mb-3">
-                {i + 1}. {pq.q}
-              </p>
+              <div className="mb-3">
+                <AssistedText
+                  text={`${i + 1}. ${pq.q}`}
+                  className="text-sm text-white"
+                />
+              </div>
               <div className="flex flex-wrap gap-2">
                 {pq.options.map((opt, j) => {
                   const isSelected = answers[i] === j;
@@ -2590,15 +2753,15 @@ function ListeningTab({
           showEs={isA0}
           className="text-xs text-slate-500 mb-2 uppercase tracking-wide"
         />
-        <p className="text-sm text-slate-300 leading-relaxed">
-          {listening.script}
-        </p>
-        <button
-          onClick={() => speakText(listening.script)}
-          className="mt-3 text-xs text-teal-400 hover:text-teal-300 transition-colors"
-        >
-          Read aloud again{isA0 && " / Leer de nuevo"}
-        </button>
+        <div className="space-y-3">
+          {splitSentences(listening.script).map((sentence, index) => (
+            <AssistedText
+              key={`${sentence}-${index}`}
+              text={sentence}
+              className="text-sm leading-relaxed text-slate-300"
+            />
+          ))}
+        </div>
       </div>
 
       {/* Questions */}
@@ -2626,9 +2789,12 @@ function ListeningTab({
                       : "border-white/5"
                   )}
                 >
-                  <p className="text-sm text-white mb-3">
-                    {i + 1}. {q.q}
-                  </p>
+                  <div className="mb-3">
+                    <AssistedText
+                      text={`${i + 1}. ${q.q}`}
+                      className="text-sm text-white"
+                    />
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {q.options.map((opt, j) => {
                       const isSelected = answers[i] === j;
@@ -2768,9 +2934,12 @@ function QuizTab({
                 : "border-white/5"
             )}
           >
-            <p className="text-sm text-white mb-3">
-              {i + 1}. {q.q}
-            </p>
+            <div className="mb-3">
+              <AssistedText
+                text={`${i + 1}. ${q.q}`}
+                className="text-sm text-white"
+              />
+            </div>
             <div className="space-y-2">
               {q.options.map((opt, j) => {
                 const isSelected = answers[i] === j;
@@ -3274,7 +3443,7 @@ function SpeakingTab({
           Speaking Practice
           {isA0 && <span className="block text-sm font-normal text-slate-500">Práctica oral</span>}
         </h2>
-        <p className="text-slate-400 text-sm">{context}</p>
+        <AssistedText text={context} className="text-sm text-slate-400" />
       </div>
 
       {/* Live pronunciation drill */}
@@ -3294,7 +3463,10 @@ function SpeakingTab({
           showEs={isA0}
           className="text-xs text-teal-400 uppercase tracking-wide mb-2"
         />
-        <p className="text-white text-sm leading-relaxed">{prompt}</p>
+        <AssistedText
+          text={prompt}
+          className="text-sm leading-relaxed text-white"
+        />
       </div>
 
       {/* Recording UI */}

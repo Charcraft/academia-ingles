@@ -182,17 +182,19 @@ export default function DashboardPage() {
   const router = useRouter();
   const profile = useStore((s) => s.profile);
   const dailyMinutes = useStore((s) => s.dailyMinutes);
+  const setDailyMinutes = useStore((s) => s.setDailyMinutes);
 
   // Use profile data or fallback defaults
   const streak = profile?.streak ?? 0;
   const totalXp = profile?.total_xp ?? 0;
   const currentLevel = (profile?.current_level ?? "A0") as CEFRLevel;
   const dailyGoal = profile?.daily_goal ?? 120;
-  const minutesToday = profile?.daily_minutes_today ?? (dailyMinutes > 0 ? dailyMinutes : 0);
-  const globalProgress = profile?.global_progress ?? 0;
+  const minutesToday = dailyMinutes;
   const firstName = profile?.first_name ?? "Student";
 
-  const dailyProgressPct = Math.min((minutesToday / dailyGoal) * 100, 100);
+  const dailyProgressPct = dailyGoal > 0
+    ? Math.min((minutesToday / dailyGoal) * 100, 100)
+    : 0;
 
   const currentLevelIndex = CEFR_LEVELS.indexOf(currentLevel);
 
@@ -252,6 +254,24 @@ export default function DashboardPage() {
       }
       setCompletedByLevel(completedCounts);
 
+      // `time_spent` is stored in seconds on each completed lesson. The old
+      // dashboard read a separate profile field that was never updated, so the
+      // daily ring stayed at zero. Derive today's value from the real activity
+      // rows and share it with the dashboard header.
+      const today = new Date();
+      const secondsToday = progressRows
+        .filter((p) => {
+          if (!p.completed_at) return false;
+          const completedAt = new Date(p.completed_at);
+          return (
+            completedAt.getFullYear() === today.getFullYear() &&
+            completedAt.getMonth() === today.getMonth() &&
+            completedAt.getDate() === today.getDate()
+          );
+        })
+        .reduce((sum, p) => sum + Math.max(Number(p.time_spent) || 0, 0), 0);
+      setDailyMinutes(Math.ceil(secondsToday / 60));
+
       setRecentActivity(
         progressRows.slice(0, 3).map((p, i) => ({
           id: `${i}-${p.completed_at}`,
@@ -300,11 +320,14 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentLevel]);
+  }, [currentLevel, setDailyMinutes]);
 
   // Total lessons completed across all levels that actually have content
   const totalCompleted = Object.values(completedByLevel).reduce((a, b) => a + b, 0);
   const totalLessonsAll = Object.values(lessonCountsByLevel).reduce((a, b) => a + b, 0);
+  const globalProgress = totalLessonsAll > 0
+    ? Math.min(Math.round((totalCompleted / totalLessonsAll) * 100), 100)
+    : Math.min(Math.max(profile?.global_progress ?? 0, 0), 100);
 
   const remainingLessons = Math.max(totalLessonsAll - totalCompleted, 0);
   const estimatedWeeks = Math.ceil((remainingLessons * 30) / (dailyGoal * 5)); // 5 days/week
